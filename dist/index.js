@@ -13370,7 +13370,7 @@ async function run() {
                 continue;
             }
             reportFiles.set(matcher, files);
-            core.info(`Found ${files.size} reports for ${matcher}`);
+            core.info(`Found ${files.size} report(s) for ${matcher}`);
             core.endGroup();
         }
         const tally = { errors: 0, warnings: 0, notices: 0, total: 0 };
@@ -13392,7 +13392,7 @@ async function run() {
                 if (maxAnnotationsReached)
                     break;
             }
-            core.info(`Parsed ${tally.total} annotations from ${files.size} reports`);
+            core.info(`Parsed ${tally.total} annotation(s) from ${files.size} report(s)`);
             core.endGroup();
             if (maxAnnotationsReached)
                 break;
