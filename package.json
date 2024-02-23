@@ -66,11 +66,17 @@
 		]
 	},
 	"dependencies": {
-		"@actions/core": "^1.10.1"
+		"@actions/core": "^1.10.1",
+		"@types/glob": "^8.1.0",
+		"@xmldom/xmldom": "^0.8.10",
+		"glob": "^10.3.10",
+		"xpath": "^0.0.34",
+		"yaml": "^2.3.4"
 	},
 	"devDependencies": {
 		"@types/jest": "^29.5.12",
 		"@types/node": "^20.11.19",
+		"@types/yaml": "^1.9.7",
 		"@typescript-eslint/eslint-plugin": "^6",
 		"@typescript-eslint/parser": "^6",
 		"@vercel/ncc": "^0.38.1",
