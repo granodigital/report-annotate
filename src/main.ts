@@ -90,7 +90,7 @@ export async function run(): Promise<void> {
 		const reportFiles = new Map<string, Set<string>>();
 		for (const { matcher, patterns } of reportMatcherPatterns) {
 			core.startGroup(`Finding ${matcher} reports`);
-			const files = await globFiles(patterns, config, matcher);
+			const files = await globFiles(patterns, config.ignore);
 			if (files.size === 0) {
 				core.warning(
 					`No reports found for ${matcher} using patterns ${patterns}`,
@@ -149,17 +149,16 @@ export async function run(): Promise<void> {
 	}
 }
 
+/** Find files using the given glob patterns. */
 async function globFiles(
 	patterns: string[],
-	config: Config,
-	matcher: string,
+	ignore: string[],
 ): Promise<Set<string>> {
 	const reportFiles = new Set<string>();
 	for (const pattern of patterns) {
-		const files = await glob(pattern, { ignore: config.ignore });
+		const files = await glob(pattern, { ignore });
 		for (const file of files) reportFiles.add(file);
 	}
-	core.debug(`Found ${reportFiles.size} files for matcher ${matcher}`);
 	return reportFiles;
 }
 
@@ -179,7 +178,6 @@ async function loadYamlConfig(): Promise<Partial<Config>> {
 
 /** Load the action inputs and merge with the yaml & default config. */
 async function loadConfig(): Promise<Config> {
-	core.debug(JSON.stringify(process.env, null, 2));
 	const inputs: Partial<Config> = {
 		reports: core.getMultilineInput('reports'),
 		ignore: core.getMultilineInput('ignore'),
@@ -188,7 +186,9 @@ async function loadConfig(): Promise<Config> {
 			: undefined,
 		customMatchers: JSON.parse(core.getInput('custom-matchers') || 'null'),
 	};
+	core.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
 	const yamlConfig = await loadYamlConfig();
+	core.debug(`Parsed yaml config: ${JSON.stringify(yamlConfig, null, 2)}`);
 	// Merge the inputs with the Yaml config and default config without overriding the defaults.
 	const config = Object.fromEntries(
 		Object.entries(DEFAULT_CONFIG).map(([key, value]) => [
@@ -196,7 +196,7 @@ async function loadConfig(): Promise<Config> {
 			inputs[key as keyof Config] || yamlConfig[key as keyof Config] || value,
 		]),
 	) as unknown as Config;
-	core.debug(`Parsed config: ${JSON.stringify(config, null, 2)}`);
+	core.debug(`Final config: ${JSON.stringify(config, null, 2)}`);
 	return config;
 }
 
@@ -208,6 +208,7 @@ async function parseXmlReport(
 	maxAnnotations: number,
 ): Promise<boolean> {
 	const report = await readFile(file, 'utf8');
+	core.debug(`Parsing report:\n${report}`);
 	const doc = new DOMParser().parseFromString(report, 'text/xml');
 	let items = select(matcher.item, doc);
 	if (!Array.isArray(items) && isNodeLike(items)) items = [items];
@@ -215,6 +216,7 @@ async function parseXmlReport(
 		core.warning(`No items found in ${file}`);
 		return false;
 	}
+	core.debug(`Found ${items.length} items in ${file}.`);
 
 	for (const item of items) {
 		core.debug(
