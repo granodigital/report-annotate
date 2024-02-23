@@ -3,15 +3,15 @@ import * as main from '../src/main';
 
 // Mock the GitHub Actions core library
 // Logs & Annotations.
-let infoMock: jest.SpyInstance;
-let errorMock: jest.SpyInstance;
-let warningMock: jest.SpyInstance;
-let noticeMock: jest.SpyInstance;
+let infoMock: jest.SpiedFunction<typeof core.info>;
+let errorMock: jest.SpiedFunction<typeof core.error>;
+let warningMock: jest.SpiedFunction<typeof core.warning>;
+let noticeMock: jest.SpiedFunction<typeof core.notice>;
 // Inputs
 let testInputs: Record<string, string | string[]>;
 // Outputs
-let setFailedMock: jest.SpyInstance;
-let setOutputMock: jest.SpyInstance;
+let setFailedMock: jest.SpiedFunction<typeof core.setFailed>;
+let setOutputMock: jest.SpiedFunction<typeof core.setOutput>;
 
 describe('action', () => {
 	beforeEach(() => {
