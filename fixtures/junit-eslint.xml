@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite package="org.eslint" time="0" tests="2" errors="2"
+		name="/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils.ts">
+		<testcase time="0" name="org.eslint.@typescript-eslint/dot-notation"
+			classname="/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils">
+			<failure message="[&quot;Bucket&quot;] is better written in dot notation."><![CDATA[
+line 7[6](https://github.com/org/repo/actions/runs/1337/job/666#step:15:7), col 28, Error - [&quot;Bucket&quot;] is better written in dot notation. (@typescript-eslint/dot-notation)
+]]></failure>
+		</testcase>
+		<testcase time="0" name="org.eslint.jsdoc/require-jsdoc"
+			classname="/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils">
+			<failure message="Missing JSDoc comment."><![CDATA[
+line 2[6](https://github.com/org/repo/actions/runs/1337/job/666#step:15:7), col 18, Warning - Missing JSDoc comment. (jsdoc/require-jsdoc)
+]]></failure>
+		</testcase>
+	</testsuite>
+</testsuites>

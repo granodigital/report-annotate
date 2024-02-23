@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="5" failures="2" errors="0" time="1.874">
+	<testsuite name="PaytrailService" errors="0" failures="2" skipped="0"
+		timestamp="2022-03-24T19:36:53" time="1.583" tests="5">
+		<testcase
+			classname="PaytrailService listProviders should return a list of providers from Paytrail"
+			name="PaytrailService listProviders should return a list of providers from Paytrail"
+			time="0.006" file="next-gen/src/modules/paytrail/paytrail.service.spec.ts">
+		</testcase>
+		<testcase classname="PaytrailService createPayment should request a payment with minimal input"
+			name="PaytrailService createPayment should request a payment with minimal input" time="0.006"
+			file="next-gen/src/modules/paytrail/paytrail.service.spec.ts">
+			<failure>Error: expect(received).toEqual(expected) // deep equality
+
+				- Expected - 1
+				+ Received + 1
+
+				@@ -1,10 +1,10 @@
+				Object {
+				&quot;access_token&quot;: Object {
+				&quot;success&quot;: &quot;mock-uuid-v4&quot;,
+				},
+				- &quot;order_id&quot;: 1,
+				+ &quot;order_id&quot;: 2,
+				&quot;service_data&quot;: Object {
+				&quot;payment&quot;: &quot;data&quot;,
+				},
+				&quot;status&quot;: &quot;unprocessed&quot;,
+				&quot;type&quot;: &quot;paytrail-v2&quot;,
+				at Object.&lt;anonymous&gt;
+				(/Users/ville.lahdenvuo/Documents/Grano/repot/ecom-api/next-gen/src/modules/paytrail/paytrail.service.spec.ts:140:29)
+				at processTicksAndRejections (node:internal/process/task_queues:96:5)</failure>
+		</testcase>
+		<testcase
+			classname="PaytrailService createPayment should return a successful payment if the order is free"
+			name="PaytrailService createPayment should return a successful payment if the order is free"
+			time="0.002" file="next-gen/src/modules/paytrail/paytrail.service.spec.ts">
+			<failure>Error: expect(received).toEqual(expected) // deep equality
+
+				- Expected - 1
+				+ Received + 1
+
+				Object {
+				- &quot;order_id&quot;: 1,
+				+ &quot;order_id&quot;: 2,
+				&quot;status&quot;: &quot;successful&quot;,
+				&quot;type&quot;: &quot;paytrail-v2&quot;,
+				}
+				at Object.&lt;anonymous&gt;
+				(/Users/ville.lahdenvuo/Documents/Grano/repot/ecom-api/next-gen/src/modules/paytrail/paytrail.service.spec.ts:152:29)
+				at processTicksAndRejections (node:internal/process/task_queues:96:5)</failure>
+		</testcase>
+		<testcase classname="PaytrailService createPayment should throw if missing paytrail config"
+			name="PaytrailService createPayment should throw if missing paytrail config" time="0.008"
+			file="next-gen/src/modules/paytrail/paytrail.service.spec.ts">
+		</testcase>
+		<testcase classname="PaytrailService createPayment should log response errors"
+			name="PaytrailService createPayment should log response errors" time="0.002"
+			file="next-gen/src/modules/paytrail/paytrail.service.spec.ts">
+		</testcase>
+	</testsuite>
+</testsuites>

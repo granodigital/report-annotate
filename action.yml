@@ -1,23 +1,39 @@
-name: 'The name of your action here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: Report Annotate
+description: Annotate PR from report e.g. junit
+author: Grano Digital
 
-# Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
-  icon: 'heart'
-  color: 'red'
+  icon: flag
+  color: yellow
 
-# Define your inputs here.
 inputs:
-  milliseconds:
-    description: 'Your input description here'
-    required: true
-    default: '1000'
+  reports:
+    description: |-
+      Reports to annotate: "<format>|<glob1>[, glob2...]"
+      For example: "junit-eslint|junit/lint.xml"
+      Default: ["junit|junit/*.xml"]
+  ignore:
+    description: |-
+      Ignore files from report search: "[glob1, glob2...]"
+      Default: ['node_modules', 'dist']
+  maxAnnotations:
+    description: |-
+      Maximum number of annotations to create
+      Default: 50
+  customMatchers:
+    description: |-
+      Custom matchers to use for parsing reports in JSON format: { "matcher-name": ReportMatcher }
+      See ./src/matchers for examples
 
-# Define your outputs here.
 outputs:
-  time:
-    description: 'Your output description here'
+  errors:
+    description: Errors found in reports
+  warnings:
+    description: Warnings found in reports
+  notices:
+    description: Notices found in reports
+  total:
+    description: Total annotations created (limited by maxAnnotations)
 
 runs:
   using: node20

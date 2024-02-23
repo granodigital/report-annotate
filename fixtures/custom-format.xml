@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Custom XML report format for testing custom matchers -->
+<testFiles>
+	<testFile filePath="/home/runner/work/repo-name/repo-name/main.ts">
+		<testSuite time="0" tests="1" errors="1">
+			<testCase>
+				<oopsie-daisy message="Your test sucks" line="77"><![CDATA[
+					Error
+						at Object.<anonymous> (/home/runner/work/repo-name/repo-name/main.ts:77:11)
+				]]></oopsie-daisy>
+			</testCase>
+		</testSuite>
+	</testFile>
+</testFiles>

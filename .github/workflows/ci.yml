@@ -51,12 +51,14 @@ jobs:
         id: checkout
         uses: actions/checkout@v4
 
-      - name: Test Local Action
-        id: test-action
+      - name: Test Report Annotate
+        id: report
         uses: ./
         with:
-          milliseconds: 2000
+          reports: |
+            junit|fixtures/junit-generic.xml
+            junit-eslint|fixtures/junit-*lint.xml
+            junit-jest|fixtures/junit-jest.xml
 
       - name: Print Output
-        id: output
-        run: echo "${{ steps.test-action.outputs.time }}"
+        run: echo "Total annotations ${{ steps.report.outputs.total }}"
