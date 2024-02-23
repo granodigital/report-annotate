@@ -98,6 +98,7 @@ export async function run(): Promise<void> {
 				continue;
 			}
 			reportFiles.set(matcher, files);
+			core.info(`Found ${files.size} reports for ${matcher}`);
 			core.endGroup();
 		}
 
@@ -127,6 +128,7 @@ export async function run(): Promise<void> {
 				}
 				if (maxAnnotationsReached) break;
 			}
+			core.info(`Parsed ${tally.total} annotations from ${files.size} reports`);
 			core.endGroup();
 			if (maxAnnotationsReached) break;
 		}

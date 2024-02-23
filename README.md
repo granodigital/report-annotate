@@ -25,7 +25,7 @@ steps:
         junit|reports/junit-generic.xml
         junit-eslint|reports/*-eslint.xml
         junit-jest|reports/junit-jest.xml
-      maxAnnotations: 20 # Keep the clutter down.
+      max-annotations: 20 # Keep the clutter down.
       ignore: node_modules/**,dist/** # Ignore patterns for the report search (default).
 
    - name: Annotations created
@@ -54,7 +54,7 @@ Feel free to open a PR to add support for new report formats or matchers.
   uses: granodigital/report-annotate@v1
   with:
     reports: my-matcher|reports/*.xml
-    customMatchers: |
+    custom-matchers: |
       {
        "my-matcher": {
           "format": "xml",
