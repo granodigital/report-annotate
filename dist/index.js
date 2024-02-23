@@ -13117,6 +13117,7 @@ var xpath = ( false) ? 0 : exports;
 
         function evaluate(parsedExpression, options) {
             var context = makeContext(options);
+
             return parsedExpression.evaluate(context);
         }
 
@@ -13435,19 +13436,20 @@ async function loadYamlConfig() {
 }
 /** Load the action inputs and merge with the yaml & default config. */
 async function loadConfig() {
+    core.debug(JSON.stringify(process.env, null, 2));
     const inputs = {
         reports: core.getMultilineInput('reports'),
         ignore: core.getMultilineInput('ignore'),
-        maxAnnotations: core.getInput('maxAnnotations')
-            ? parseInt(core.getInput('maxAnnotations'))
+        maxAnnotations: core.getInput('max-annotations')
+            ? parseInt(core.getInput('max-annotations'))
             : undefined,
-        customMatchers: JSON.parse(core.getInput('customMatchers') ?? 'null'),
+        customMatchers: JSON.parse(core.getInput('custom-matchers') || 'null'),
     };
     const yamlConfig = await loadYamlConfig();
     // Merge the inputs with the Yaml config and default config without overriding the defaults.
     const config = Object.fromEntries(Object.entries(DEFAULT_CONFIG).map(([key, value]) => [
         key,
-        inputs[key] ?? yamlConfig[key] ?? value,
+        inputs[key] || yamlConfig[key] || value,
     ]));
     core.debug(`Parsed config: ${JSON.stringify(config, null, 2)}`);
     return config;
