@@ -83,7 +83,7 @@ describe('action', () => {
 	});
 
 	it('should support custom matchers', async () => {
-		testInputs.customMatchers = `{"custom-matcher": {
+		testInputs['custom-matchers'] = `{"custom-matcher": {
 			"format": "xml",
 			"item": "//testCase",
 			"title": "oopsie-daisy/@message",
@@ -113,7 +113,7 @@ describe('action', () => {
 	});
 
 	it('should report expression errors', async () => {
-		testInputs.customMatchers = `{"custom-matcher": {
+		testInputs['custom-matchers'] = `{"custom-matcher": {
 			"format": "xml",
 			"item": "//testCase",
 			"message": "oopsie€daisy/#message"
@@ -171,7 +171,7 @@ at Tests.Registration.main(Registration.java:202)`,
 
 	it('should respect maxAnnotations', async () => {
 		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
-		testInputs.maxAnnotations = '1';
+		testInputs['max-annotations'] = '1';
 		await main.run();
 		expect(warningMock).toHaveBeenCalledWith(
 			'Maximum number of annotations reached (1)',

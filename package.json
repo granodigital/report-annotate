@@ -1,16 +1,16 @@
 {
-	"name": "typescript-action",
-	"description": "GitHub Actions TypeScript template",
+	"name": "report-annotate",
+	"description": "Annotate PR from report e.g. junit",
 	"version": "0.0.0",
 	"author": "",
 	"private": true,
-	"homepage": "https://github.com/actions/typescript-action",
+	"homepage": "https://github.com/granodigital/report-annotate",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/actions/typescript-action.git"
+		"url": "git+https://github.com/granodigital/report-annotate.git"
 	},
 	"bugs": {
-		"url": "https://github.com/actions/typescript-action/issues"
+		"url": "https://github.com/granodigital/report-annotate/issues"
 	},
 	"keywords": [
 		"actions",
@@ -33,6 +33,7 @@
 		"package": "ncc build src/index.ts --license licenses.txt",
 		"package:watch": "npm run package -- --watch",
 		"test": "jest",
+		"test:wa": "jest --watchAll",
 		"all": "npm run format:write && npm run lint && npm run test && npm run coverage && npm run package"
 	},
 	"license": "MIT",

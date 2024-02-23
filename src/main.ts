@@ -182,7 +182,7 @@ async function loadConfig(): Promise<Config> {
 		maxAnnotations: core.getInput('max-annotations')
 			? parseInt(core.getInput('max-annotations'))
 			: undefined,
-		customMatchers: {}, // JSON.parse(core.getInput('custom-matchers') || 'null'),
+		customMatchers: JSON.parse(core.getInput('custom-matchers') || 'null'),
 	};
 	const yamlConfig = await loadYamlConfig();
 	// Merge the inputs with the Yaml config and default config without overriding the defaults.
