@@ -16,11 +16,11 @@ inputs:
     description: |-
       Ignore files from report search: "[glob1, glob2...]"
       Default: ['node_modules', 'dist']
-  maxAnnotations:
+  max-annotations:
     description: |-
       Maximum number of annotations to create
       Default: 50
-  customMatchers:
+  custom-matchers:
     description: |-
       Custom matchers to use for parsing reports in JSON format: { "matcher-name": ReportMatcher }
       See ./src/matchers for examples

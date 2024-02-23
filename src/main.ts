@@ -175,16 +175,14 @@ async function loadYamlConfig(): Promise<Partial<Config>> {
 
 /** Load the action inputs and merge with the yaml & default config. */
 async function loadConfig(): Promise<Config> {
-	core.info(
-		`Loading configuration ${core.getInput('customMatchers')}, ${core.getInput('customMatchers') || 'null'}`,
-	);
+	core.debug(JSON.stringify(process.env, null, 2));
 	const inputs: Partial<Config> = {
 		reports: core.getMultilineInput('reports'),
 		ignore: core.getMultilineInput('ignore'),
-		maxAnnotations: core.getInput('maxAnnotations')
-			? parseInt(core.getInput('maxAnnotations'))
+		maxAnnotations: core.getInput('max-annotations')
+			? parseInt(core.getInput('max-annotations'))
 			: undefined,
-		customMatchers: {}, // JSON.parse(core.getInput('customMatchers') || 'null'),
+		customMatchers: {}, // JSON.parse(core.getInput('custom-matchers') || 'null'),
 	};
 	const yamlConfig = await loadYamlConfig();
 	// Merge the inputs with the Yaml config and default config without overriding the defaults.
