@@ -13424,7 +13424,7 @@ async function globFiles(patterns, config, matcher) {
 }
 /** Load the Yaml config file. */
 async function loadYamlConfig() {
-    const configPath = core.getInput('configPath') ?? DEFAULT_CONFIG_PATH;
+    const configPath = core.getInput('configPath') || DEFAULT_CONFIG_PATH;
     if ((0, node_fs_1.existsSync)(configPath)) {
         core.info(`Using config file at ${configPath}`);
         // Parse Yaml config and merge with default config.

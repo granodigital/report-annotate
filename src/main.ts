@@ -163,7 +163,7 @@ async function globFiles(
 
 /** Load the Yaml config file. */
 async function loadYamlConfig(): Promise<Partial<Config>> {
-	const configPath: string = core.getInput('configPath') ?? DEFAULT_CONFIG_PATH;
+	const configPath: string = core.getInput('configPath') || DEFAULT_CONFIG_PATH;
 	if (existsSync(configPath)) {
 		core.info(`Using config file at ${configPath}`);
 		// Parse Yaml config and merge with default config.
