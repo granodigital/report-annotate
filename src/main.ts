@@ -145,11 +145,15 @@ export async function run(): Promise<void> {
 	}
 }
 
-async function globFiles(patterns: string[], config: Config, matcher: string) {
+async function globFiles(
+	patterns: string[],
+	config: Config,
+	matcher: string,
+): Promise<Set<string>> {
 	const reportFiles = new Set<string>();
 	for (const pattern of patterns) {
 		const files = await glob(pattern, { ignore: config.ignore });
-		files.forEach(file => reportFiles.add(file));
+		for (const file of files) reportFiles.add(file);
 	}
 	core.debug(`Found ${reportFiles.size} files for matcher ${matcher}`);
 	return reportFiles;

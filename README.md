@@ -1,5 +1,7 @@
 # Report Annotate
 
+[![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
+
 Easily add annotations to your GitHub pull requests based on reports from your
 tests, linters, etc.
 

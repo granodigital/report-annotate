@@ -3,20 +3,18 @@ import xpath, { type XString, type XBoolean, type Evaluator } from 'xpath';
 // Extend xpath types as they are incomplete.
 declare module 'xpath' {
 	/** A string. */
-	export interface XString {
-		new (value: string): XString;
+	export class XString {
 		toString(): string;
 	}
 
 	/** A boolean. */
-	export interface XBoolean {
-		new (value: boolean): XBoolean;
+	export class XBoolean {
 		toString(): string;
 		booleanValue(): boolean;
 	}
 
 	/** A set of nodes. */
-	export interface XNodeSet {
+	export class XNodeSet {
 		nodes: Node[];
 		size: number;
 		toString(): string;
@@ -24,7 +22,11 @@ declare module 'xpath' {
 
 	interface EvaluatorOptions {
 		node: Node;
-		functions: Record<string, (context: unknown, ...args: any[]) => unknown>;
+		functions: Record<
+			string,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(context: unknown, ...args: any[]) => unknown
+		>;
 	}
 
 	/** Evaluate the expression and return the result in the requested type. */
@@ -69,6 +71,7 @@ const functions = {
 };
 
 /** Utility to select items from a Node with extra functions like `replace`. */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export const xpathSelect = (node: Node) => ({
 	/** Parse the expression and return an evaluator. */
 	parse(expression: string): Evaluator {

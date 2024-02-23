@@ -1,4 +1,4 @@
-import { type ReportMatcher } from 'src/main';
+import { type ReportMatcher } from '../main';
 
 /**
  * Generic matcher for reports in JUnit format.

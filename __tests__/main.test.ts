@@ -3,6 +3,7 @@ import * as main from '../src/main';
 
 // Mock the GitHub Actions core library
 // Logs & Annotations.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let infoMock: jest.SpiedFunction<typeof core.info>;
 let errorMock: jest.SpiedFunction<typeof core.error>;
 let warningMock: jest.SpiedFunction<typeof core.warning>;
