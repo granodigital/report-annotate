@@ -9,7 +9,7 @@ branding:
 inputs:
   reports:
     description: |-
-      Reports to annotate: "<format>|<glob1>[, glob2...]"
+      Reports to annotate: "format|glob1, glob2, ..."
       For example: "junit-eslint|junit/lint.xml"
       Default: ["junit|junit/*.xml"]
   ignore:
