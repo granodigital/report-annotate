@@ -188,7 +188,7 @@ async function loadConfig(): Promise<Config> {
 	const config = Object.fromEntries(
 		Object.entries(DEFAULT_CONFIG).map(([key, value]) => [
 			key,
-			inputs[key as keyof Config] ?? yamlConfig[key as keyof Config] ?? value,
+			inputs[key as keyof Config] || yamlConfig[key as keyof Config] || value,
 		]),
 	) as unknown as Config;
 	core.debug(`Parsed config: ${JSON.stringify(config, null, 2)}`);
