@@ -3,11 +3,16 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { glob } from 'glob';
-import { junitEslintMatcher } from './matchers/junit-eslint';
+import { junitEslintMatcher } from './matchers/junit-eslint.js';
 import { DOMParser } from '@xmldom/xmldom';
-import { isArrayOfNodes, isNodeLike, select, xpathSelect } from './xpath-utils';
-import { junitMatcher } from './matchers/junit';
-import { junitJestMatcher } from './matchers/junit-jest';
+import {
+	isArrayOfNodes,
+	isNodeLike,
+	select,
+	xpathSelect,
+} from './xpath-utils.js';
+import { junitMatcher } from './matchers/junit.js';
+import { junitJestMatcher } from './matchers/junit-jest.js';
 
 const DEFAULT_CONFIG_PATH = '.github/report-annotate.yml';
 const DEFAULT_CONFIG: Partial<Config> = {

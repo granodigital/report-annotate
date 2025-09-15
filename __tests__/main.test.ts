@@ -1,45 +1,96 @@
-import * as core from '@actions/core';
-import * as main from '../src/main';
+import { jest } from '@jest/globals';
+
+// In Jest 30 with ESM, directly spying on re-exported ESM bindings of '@actions/core'
+// and assigning implementations (jest.spyOn(core, 'debug').mockImplementation(...))
+// can throw "Cannot assign to read only property" because the ESM named exports are
+// read-only live bindings. We instead mock the entire module before importing the
+// system under test using `jest.unstable_mockModule`, then obtain the mocked module
+// via dynamic import. This preserves type information and avoids mutation of the
+// read-only export objects.
+
+const coreMocks: Record<string, jest.Mock> = {};
+
+await jest.unstable_mockModule('@actions/core', async () => {
+	const original =
+		await jest.requireActual<typeof import('@actions/core')>('@actions/core');
+	const make = <T extends keyof typeof original>(key: T) => {
+		const fn = jest.fn();
+		coreMocks[key as string] = fn;
+		return fn;
+	};
+	return {
+		...original,
+		debug: make('debug'),
+		info: make('info'),
+		error: make('error'),
+		warning: make('warning'),
+		notice: make('notice'),
+		startGroup: make('startGroup'),
+		endGroup: make('endGroup'),
+		getInput: make('getInput'),
+		getMultilineInput: make('getMultilineInput'),
+		setFailed: make('setFailed'),
+		setOutput: make('setOutput'),
+	} as typeof import('@actions/core');
+});
+
+// Dynamically import after mocking so the SUT picks up mocked module.
+const main = await import('../src/main');
 
 // Mock the GitHub Actions core library
 // Logs & Annotations.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-let infoMock: jest.SpiedFunction<typeof core.info>;
-let errorMock: jest.SpiedFunction<typeof core.error>;
-let warningMock: jest.SpiedFunction<typeof core.warning>;
-let noticeMock: jest.SpiedFunction<typeof core.notice>;
+let infoMock: jest.Mock;
+let errorMock: jest.Mock;
+let warningMock: jest.Mock;
+let noticeMock: jest.Mock;
 // Inputs
 let testInputs: Record<string, string | string[]>;
 // Outputs
-let setFailedMock: jest.SpiedFunction<typeof core.setFailed>;
-let setOutputMock: jest.SpiedFunction<typeof core.setOutput>;
+let setFailedMock: jest.Mock;
+let setOutputMock: jest.Mock;
 
 describe('action', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
-		// Logs & Annotations
+		// Simple logging mock (can redirect to stdout for debugging if desired)
 		const logMock = jest.fn();
-		// Uncomment to see action logs.
-		// .mockImplementation(msg => process.stdout.write(`${msg}\n`));
-		jest.spyOn(core, 'debug').mockImplementation(logMock);
-		infoMock = jest.spyOn(core, 'info').mockImplementation(logMock);
-		errorMock = jest.spyOn(core, 'error').mockImplementation(logMock);
-		warningMock = jest.spyOn(core, 'warning').mockImplementation(logMock);
-		noticeMock = jest.spyOn(core, 'notice').mockImplementation(logMock);
-		jest.spyOn(core, 'startGroup').mockImplementation(logMock);
-		jest.spyOn(core, 'endGroup').mockImplementation(logMock);
+		coreMocks.debug.mockImplementation(logMock);
+		infoMock = coreMocks.info.mockImplementation(logMock);
+		errorMock = coreMocks.error.mockImplementation(logMock);
+		warningMock = coreMocks.warning.mockImplementation(logMock);
+		noticeMock = coreMocks.notice.mockImplementation(logMock);
+		coreMocks.startGroup.mockImplementation(logMock);
+		coreMocks.endGroup.mockImplementation(logMock);
 		// Inputs
 		testInputs = {
 			reports: ['junit-eslint|fixtures/junit-eslint.xml'],
 		};
-		const inputMock = jest
-			.fn()
-			.mockImplementation((name: keyof typeof testInputs) => testInputs[name]);
-		jest.spyOn(core, 'getInput').mockImplementation(inputMock);
-		jest.spyOn(core, 'getMultilineInput').mockImplementation(inputMock);
+		const inputValue = (name: string) =>
+			testInputs[name as keyof typeof testInputs];
+		const getInputMock = jest.fn((...args: unknown[]) => {
+			const name = String(args[0]);
+			const value = inputValue(name);
+			// For getInput always coerce arrays to first element
+			return Array.isArray(value) ? value[0] : (value as string);
+		});
+		const getMultilineInputMock = jest.fn((...args: unknown[]) => {
+			const name = String(args[0]);
+			const value = inputValue(name);
+			if (value == null) return [];
+			return (Array.isArray(value) ? value : [value])
+				.filter(v => v != null)
+				.map(v => String(v));
+		});
+		coreMocks.getInput.mockImplementation(
+			getInputMock as unknown as (...args: unknown[]) => unknown,
+		);
+		coreMocks.getMultilineInput.mockImplementation(
+			getMultilineInputMock as unknown as (...args: unknown[]) => unknown,
+		);
 		// Outputs
-		setFailedMock = jest.spyOn(core, 'setFailed').mockImplementation();
-		setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation();
+		setFailedMock = coreMocks.setFailed;
+		setOutputMock = coreMocks.setOutput;
 	});
 
 	it('should parse report correctly', async () => {
@@ -231,7 +282,7 @@ at Tests.Registration.main(Registration.java:202)`,
 			},
 		);
 		expect(warningMock).not.toHaveBeenCalled();
-		expect(noticeMock).not.toHaveBeenCalledWith();
+		expect(noticeMock).not.toHaveBeenCalled();
 		expect(setOutputMock).toHaveBeenCalledWith('errors', 2);
 		expect(setOutputMock).toHaveBeenCalledWith('warnings', 0);
 		expect(setOutputMock).toHaveBeenCalledWith('notices', 0);
