@@ -174,11 +174,42 @@ at Tests.Registration.main(Registration.java:202)`,
 		testInputs['max-annotations'] = '1';
 		await main.run();
 		expect(warningMock).toHaveBeenCalledWith(
-			'Maximum number of annotations reached (1)',
+			'Maximum number of annotations reached (1). 2 annotations were not shown.',
 		);
-		expect(setOutputMock).toHaveBeenCalledWith('errors', 0);
+		expect(setOutputMock).toHaveBeenCalledWith('errors', 1);
 		expect(setOutputMock).toHaveBeenCalledWith('warnings', 0);
-		expect(setOutputMock).toHaveBeenCalledWith('notices', 1);
+		expect(setOutputMock).toHaveBeenCalledWith('notices', 0);
+		expect(setOutputMock).toHaveBeenCalledWith('total', 1);
+	});
+
+	it('should prioritize errors over warnings and notices when maxAnnotations is reached', async () => {
+		// This test uses junit-eslint fixture which has both errors and warnings
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		testInputs['max-annotations'] = '1';
+		await main.run();
+
+		// Should show the error first, not the warning
+		expect(errorMock).toHaveBeenCalledWith(
+			'["Bucket"] is better written in dot notation.',
+			{
+				endColumn: undefined,
+				endLine: undefined,
+				file: '/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils.ts',
+				startColumn: 28,
+				startLine: 7,
+				title: '@typescript-eslint/dot-notation',
+			},
+		);
+
+		// Warning should not be called since we only allow 1 annotation and error has priority
+		expect(warningMock).not.toHaveBeenCalledWith(
+			'Missing JSDoc comment.',
+			expect.any(Object),
+		);
+
+		expect(setOutputMock).toHaveBeenCalledWith('errors', 1);
+		expect(setOutputMock).toHaveBeenCalledWith('warnings', 0);
+		expect(setOutputMock).toHaveBeenCalledWith('notices', 0);
 		expect(setOutputMock).toHaveBeenCalledWith('total', 1);
 	});
 
