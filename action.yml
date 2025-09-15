@@ -36,5 +36,5 @@ outputs:
     description: Total annotations created (limited by max-annotations)
 
 runs:
-  using: node24
+  using: node20
   main: dist/index.js
