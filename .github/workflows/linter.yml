@@ -48,6 +48,13 @@ jobs:
           DEFAULT_BRANCH: main
           FILTER_REGEX_EXCLUDE: dist/**/*
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Explicitly provide the base SHA so super-linter does not try to
+          # derive an unreachable ancestor commit like `<sha>~360` which has
+          # caused failures on shallow or young repositories.
+          # For pull_request events use the PR base; for push events fall back
+          # to the `before` SHA from the push payload.
+          GITHUB_BEFORE_SHA:
+            ${{ github.event.pull_request.base.sha || github.event.before }}
           LINTER_RULES_PATH: .
           VALIDATE_ALL_CODEBASE: true
           VALIDATE_GITHUB_ACTIONS_ZIZMOR: false
