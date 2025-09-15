@@ -71,7 +71,6 @@ const functions = {
 };
 
 /** Utility to select items from a Node with extra functions like `replace`. */
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export const xpathSelect = (node: Node) => ({
 	/** Parse the expression and return an evaluator. */
 	parse(expression: string): Evaluator {
@@ -99,3 +98,28 @@ export const xpathSelect = (node: Node) => ({
 
 // Re-export the xpath module with the extended types and functions.
 export * from 'xpath';
+
+/** Lightweight type guard for a DOM-like Node. */
+export function isNodeLike(value: unknown): value is Node {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		// Some DOM implementations have nodeType & nodeName
+		'nodeType' in (value as Record<string, unknown>) &&
+		'nodeName' in (value as Record<string, unknown>)
+	);
+}
+
+/** Returns true if the provided value is an array of Node objects. */
+export function isArrayOfNodes(value: unknown): value is Node[] {
+	return Array.isArray(value) && value.every(isNodeLike);
+}
+
+/** Passthrough to original xpath select while keeping ESM re-export pattern. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const select: any =
+	(xpath as unknown as { select?: unknown }).select ||
+	// Fallback for unexpected shape; users should provide proper xpath usage.
+	(() => {
+		throw new Error('xpath.select is not available in the imported module');
+	});

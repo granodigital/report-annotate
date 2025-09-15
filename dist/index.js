@@ -52397,7 +52397,6 @@ const functions = {
     },
 };
 /** Utility to select items from a Node with extra functions like `replace`. */
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 const xpathSelect = (node) => ({
     /** Parse the expression and return an evaluator. */
     parse(expression) {
@@ -52423,6 +52422,25 @@ const xpathSelect = (node) => ({
         return this.parse(expression).evaluateBoolean({ node, functions });
     },
 });
+/** Lightweight type guard for a DOM-like Node. */
+function isNodeLike(value) {
+    return (typeof value === 'object' &&
+        value !== null &&
+        // Some DOM implementations have nodeType & nodeName
+        'nodeType' in value &&
+        'nodeName' in value);
+}
+/** Returns true if the provided value is an array of Node objects. */
+function isArrayOfNodes(value) {
+    return Array.isArray(value) && value.every(isNodeLike);
+}
+/** Passthrough to original xpath select while keeping ESM re-export pattern. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const select = xpath.select ||
+    // Fallback for unexpected shape; users should provide proper xpath usage.
+    (() => {
+        throw new Error('xpath.select is not available in the imported module');
+    });
 
 /**
  * Generic matcher for reports in JUnit format.
@@ -52622,10 +52640,10 @@ async function parseXmlReport(file, matcher, allAnnotations) {
     const report = await readFile(file, 'utf8');
     coreExports.debug(`Parsing report:\n${report}`);
     const doc = new libExports.DOMParser().parseFromString(report, 'text/xml');
-    let items = xpathExports.select(matcher.item, doc);
-    if (!Array.isArray(items) && xpathExports.isNodeLike(items))
+    let items = select(matcher.item, doc);
+    if (!Array.isArray(items) && isNodeLike(items))
         items = [items];
-    if (!xpathExports.isArrayOfNodes(items)) {
+    if (!isArrayOfNodes(items)) {
         coreExports.warning(`No items found in ${file}`);
         return;
     }
