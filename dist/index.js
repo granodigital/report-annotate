@@ -52515,8 +52515,7 @@ async function run() {
             coreExports.info(`Found ${files.size} report(s) for ${matcher}`);
             coreExports.endGroup();
         }
-        const tally = { errors: 0, warnings: 0, notices: 0, total: 0 };
-        let maxAnnotationsReached = false;
+        const allAnnotations = [];
         for (const [matcherName, files] of reportFiles) {
             const matcher = reportMatchers[matcherName];
             if (!matcher)
@@ -52526,21 +52525,41 @@ async function run() {
                 coreExports.debug(`Parsing ${file}`);
                 switch (matcher.format) {
                     case 'xml':
-                        maxAnnotationsReached = await parseXmlReport(file, matcher, tally, config.maxAnnotations);
+                        await parseXmlReport(file, matcher, allAnnotations);
                         break;
                     default:
                         throw new Error(`Unsupported matcher format in ${matcherName}: ${matcher.format}`);
                 }
-                if (maxAnnotationsReached)
-                    break;
             }
-            coreExports.info(`Parsed ${tally.total} annotation(s) from ${files.size} report(s)`);
+            coreExports.info(`Parsed ${allAnnotations.length} annotation(s) from ${files.size} report(s)`);
             coreExports.endGroup();
-            if (maxAnnotationsReached)
-                break;
         }
-        if (maxAnnotationsReached)
-            coreExports.warning(`Maximum number of annotations reached (${config.maxAnnotations})`);
+        // Sort annotations by priority: errors first, then warnings, then notices
+        // Ignore level annotations are already filtered out during collection
+        const priorityOrder = {
+            error: 0,
+            warning: 1,
+            notice: 2,
+            ignore: 3, // Should not appear in the array, but included for type completeness
+        };
+        allAnnotations.sort((a, b) => priorityOrder[a.level] - priorityOrder[b.level]);
+        // Apply the maxAnnotations limit and create the annotations
+        const annotationsToCreate = allAnnotations.slice(0, config.maxAnnotations);
+        const tally = { errors: 0, warnings: 0, notices: 0, total: 0 };
+        for (const annotation of annotationsToCreate) {
+            // Type assertion is safe because we filter out 'ignore' level during collection
+            core$1[annotation.level](annotation.message, annotation.properties);
+            if (annotation.level === 'error')
+                tally.errors++;
+            if (annotation.level === 'warning')
+                tally.warnings++;
+            if (annotation.level === 'notice')
+                tally.notices++;
+            tally.total++;
+        }
+        if (allAnnotations.length > config.maxAnnotations) {
+            coreExports.warning(`Maximum number of annotations reached (${config.maxAnnotations}). ${allAnnotations.length - config.maxAnnotations} annotations were not shown.`);
+        }
         // Set outputs for other workflow steps to use.
         coreExports.setOutput('errors', tally.errors);
         coreExports.setOutput('warnings', tally.warnings);
@@ -52599,7 +52618,7 @@ async function loadConfig() {
     return config;
 }
 /** Parse an XML report using the given matcher. */
-async function parseXmlReport(file, matcher, tally, maxAnnotations) {
+async function parseXmlReport(file, matcher, allAnnotations) {
     const report = await readFile(file, 'utf8');
     coreExports.debug(`Parsing report:\n${report}`);
     const doc = new libExports.DOMParser().parseFromString(report, 'text/xml');
@@ -52608,11 +52627,11 @@ async function parseXmlReport(file, matcher, tally, maxAnnotations) {
         items = [items];
     if (!xpathExports.isArrayOfNodes(items)) {
         coreExports.warning(`No items found in ${file}`);
-        return false;
+        return;
     }
     coreExports.debug(`Found ${items.length} items in ${file}.`);
     for (const item of items) {
-        coreExports.debug(`Processing item ${tally.total + 1}/${maxAnnotations}: ${item}.`);
+        coreExports.debug(`Processing item: ${item}.`);
         const xpath = xpathSelect(item);
         // Figure out the level of the annotation.
         let level = 'error';
@@ -52631,9 +52650,9 @@ async function parseXmlReport(file, matcher, tally, maxAnnotations) {
             coreExports.debug('Ignoring item.');
             continue;
         }
-        // Create the annotation.
+        // Create the annotation data.
         const message = xpath.string(matcher.message);
-        const annotation = {
+        const properties = {
             title: matcher.title ? xpath.string(matcher.title) : undefined,
             file: matcher.file ? xpath.string(matcher.file) : undefined,
             startLine: matcher.startLine
@@ -52647,19 +52666,9 @@ async function parseXmlReport(file, matcher, tally, maxAnnotations) {
                 ? xpath.number(matcher.endColumn)
                 : undefined,
         };
-        core$1[level](message, annotation);
-        // Count the annotations for the output.
-        if (level === 'error')
-            tally.errors++;
-        if (level === 'warning')
-            tally.warnings++;
-        if (level === 'notice')
-            tally.notices++;
-        tally.total++;
-        if (tally.total >= maxAnnotations)
-            return true;
+        // Collect non-ignore annotations
+        allAnnotations.push({ level, message, properties });
     }
-    return false;
 }
 
 /**
