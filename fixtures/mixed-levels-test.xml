@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testCases>
+	<testCase level="notice" name="Notice First">This is a notice</testCase>
+	<testCase level="error" name="Error First">This is an error</testCase>
+	<testCase level="warning" name="Warning First">This is a warning</testCase>
+	<testCase level="error" name="Error Second">This is another error</testCase>
+	<testCase level="notice" name="Notice Second">This is another notice</testCase>
+</testCases>
