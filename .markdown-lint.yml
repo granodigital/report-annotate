@@ -22,3 +22,7 @@ MD030:
 # Code block style
 MD046:
   style: fenced
+
+# Allow hard tabs in code
+MD010:
+  ignore_code_blocks: true
