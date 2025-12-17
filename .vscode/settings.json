@@ -12,5 +12,10 @@
 	"github.copilot.chat.pullRequestDescriptionGeneration.instructions": [
 		{ "text": "Always include a list of key changes." }
 	],
-	"cSpell.words": ["CODEOWNERS", "granodigital", "oopsie", "paytrail"]
+	"cSpell.words": ["CODEOWNERS", "granodigital", "oopsie", "paytrail"],
+	"jest.runMode": {
+		"type": "on-save",
+		"coverage": true,
+		"deferred": true
+	}
 }
