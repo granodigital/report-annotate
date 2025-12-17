@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Test run" tests="3" failures="0" errors="3" skipped="0"
+	assertions="6" time="10.0" timestamp="2025-12-17T12:00:00">
+
+	<testsuite name="Tests.ManyErrors" tests="3" failures="0" errors="3" skipped="0"
+		assertions="6" time="10.0" timestamp="2025-12-17T12:00:00"
+		file="tests/many-errors.code">
+
+		<testcase name="errorTest1" classname="Tests.ManyErrors" assertions="2"
+			time="3.0" file="tests/many-errors.code" line="10">
+			<error message="First error occurred." type="RuntimeError">
+				Error details for first error
+			</error>
+		</testcase>
+
+		<testcase name="errorTest2" classname="Tests.ManyErrors" assertions="2"
+			time="3.5" file="tests/many-errors.code" line="20">
+			<error message="Second error occurred." type="RuntimeError">
+				Error details for second error
+			</error>
+		</testcase>
+
+		<testcase name="errorTest3" classname="Tests.ManyErrors" assertions="2"
+			time="3.5" file="tests/many-errors.code" line="30">
+			<error message="Third error occurred." type="RuntimeError">
+				Error details for third error
+			</error>
+		</testcase>
+	</testsuite>
+</testsuites>

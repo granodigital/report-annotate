@@ -12,6 +12,9 @@ tests, linters, etc.
 ## Usage Example
 
 ```yml
+permissions:
+  pull-requests: write  # Required for creating comments on skipped annotations
+
 steps:
   - name: Checkout
     id: checkout
@@ -29,7 +32,6 @@ steps:
         junit|reports/junit-generic.xml
         junit-eslint|reports/*-eslint.xml
         junit-jest|reports/junit-jest.xml
-      max-annotations: 20 # Keep the clutter down (50 is max by GitHub)
       ignore: node_modules/**,dist/** # Ignore patterns for the report search (default).
 
    - name: Annotations created
@@ -40,6 +42,34 @@ steps:
          echo "Warnings: ${{ steps.annotate.outputs.warnings }}"
          echo "Notices: ${{ steps.annotate.outputs.notices }}"
 ```
+
+## Inputs
+
+| Name              | Description                                                                                                                       | Default                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."`<br>For example: `"junit-eslint\|junit/lint.xml"`                               | `["junit\|junit/*.xml"]`         |
+| `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                            | `['node_modules/**', 'dist/**']` |
+| `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                     | `10`                             |
+| `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }`<br>See ./src/matchers for examples |                                  |
+| `token`           | GitHub token for creating PR comments when annotations are skipped                                                                | `${{ github.token }}`            |
+
+## Skipped Annotations
+
+When the maximum number of annotations per type is reached, additional
+annotations are not displayed as GitHub annotations to avoid clutter. Instead,
+they are added as a comment on the pull request using GitHub's markdown box
+syntax:
+
+- **Error** boxes for skipped error annotations
+- **Warning** boxes for skipped warning annotations
+- **Note** boxes for skipped notice annotations
+
+This ensures that all issues are still visible to developers without
+overwhelming the GitHub UI.
+
+> [!NOTE] For more information about GitHub Actions annotation limitations, see
+> the
+> [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 > [!NOTE]
 >

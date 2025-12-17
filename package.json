@@ -1,7 +1,7 @@
 {
 	"name": "report-annotate",
 	"description": "Annotate PR from report e.g. junit",
-	"version": "0.0.0",
+	"version": "3.0.0",
 	"author": "",
 	"type": "module",
 	"private": true,
@@ -43,6 +43,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"@actions/core": "^1.11.1",
+		"@actions/github": "^6.0.0",
 		"@types/glob": "^8.1.0",
 		"@xmldom/xmldom": "^0.8.10",
 		"glob": "^10.3.10",

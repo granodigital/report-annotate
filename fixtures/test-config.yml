@@ -1,0 +1,3 @@
+reports:
+  - junit|fixtures/junit-generic.xml
+maxAnnotations: 10

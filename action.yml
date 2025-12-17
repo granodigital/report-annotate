@@ -11,19 +11,25 @@ inputs:
     description: |-
       Reports to annotate: "format|glob1, glob2, ..."
       For example: "junit-eslint|junit/lint.xml"
-      Default: ["junit|junit/*.xml"]
+    default: |
+      junit|junit/*.xml
   ignore:
     description: |-
       Ignore files from report search: "[glob1, glob2...]"
-      Default: ['node_modules', 'dist']
+    default: |
+      node_modules/**
+      dist/**
   max-annotations:
     description: |-
-      Maximum number of annotations to create
-      Default: 50
+      Maximum number of annotations per type (error/warning/notice)
+    default: '10'
   custom-matchers:
     description: |-
       Custom matchers to use for parsing reports in JSON format: { "matcher-name": ReportMatcher }
       See ./src/matchers for examples
+  token:
+    description: GitHub token for creating PR comments
+    default: ${{ github.token }}
 
 outputs:
   errors:
@@ -33,7 +39,7 @@ outputs:
   notices:
     description: Notices found in reports
   total:
-    description: Total annotations created (limited by max-annotations)
+    description: Total annotations created
 
 runs:
   using: node24

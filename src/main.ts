@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import * as github from '@actions/github';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
@@ -18,7 +19,7 @@ const DEFAULT_CONFIG_PATH = '.github/report-annotate.yml';
 const DEFAULT_CONFIG: Partial<Config> = {
 	reports: ['junit|junit/*.xml'],
 	ignore: ['node_modules/**', 'dist/**'],
-	maxAnnotations: 50,
+	maxAnnotations: 10,
 	customMatchers: {},
 };
 
@@ -30,7 +31,7 @@ export interface Config {
 	reports: string[];
 	/** List of globs to ignore when searching for reports. */
 	ignore: string[];
-	/** Maximum number of annotations to create. */
+	/** Maximum number of annotations per type (error/warning/notice). */
 	maxAnnotations: number;
 	/** Custom matchers for parsing reports. */
 	customMatchers: Record<string, ReportMatcher>;
@@ -94,93 +95,201 @@ export async function run(): Promise<void> {
 			...config.customMatchers,
 		};
 
-		const reportMatcherPatterns = config.reports.map(report => {
-			const [matcher, patterns] = report.split('|');
-			return { matcher, patterns: patterns.split(',') };
-		});
-		const reportFiles = new Map<string, Set<string>>();
-		for (const { matcher, patterns } of reportMatcherPatterns) {
-			core.startGroup(`Finding ${matcher} reports`);
-			const files = await globFiles(patterns, config.ignore);
-			if (files.size === 0) {
-				core.warning(
-					`No reports found for ${matcher} using patterns ${patterns}`,
-				);
-				continue;
-			}
-			reportFiles.set(matcher, files);
-			core.info(`Found ${files.size} report(s) for ${matcher}`);
-			core.endGroup();
-		}
-
-		const allAnnotations: PendingAnnotation[] = [];
-
-		for (const [matcherName, files] of reportFiles) {
-			const matcher = reportMatchers[matcherName];
-			if (!matcher) throw new Error(`No matcher found for ${matcherName}`);
-
-			core.startGroup(`Parsing ${matcherName} reports`);
-			for (const file of files) {
-				core.debug(`Parsing ${file}`);
-				switch (matcher.format) {
-					case 'xml':
-						await parseXmlReport(file, matcher, allAnnotations);
-						break;
-					default:
-						throw new Error(
-							`Unsupported matcher format in ${matcherName}: ${matcher.format}`,
-						);
-				}
-			}
-			core.info(
-				`Parsed ${allAnnotations.length} annotation(s) from ${files.size} report(s)`,
-			);
-			core.endGroup();
-		}
-
-		// Sort annotations by priority: errors first, then warnings, then notices
-		// Ignore level annotations are already filtered out during collection
-		const priorityOrder: Record<AnnotationLevel, number> = {
-			error: 0,
-			warning: 1,
-			notice: 2,
-			ignore: 3, // Should not appear in the array, but included for type completeness
-		};
-		allAnnotations.sort(
-			(a, b) => priorityOrder[a.level] - priorityOrder[b.level],
-		);
-
-		// Apply the maxAnnotations limit and create the annotations
-		const annotationsToCreate = allAnnotations.slice(0, config.maxAnnotations);
-		const tally = { errors: 0, warnings: 0, notices: 0, total: 0 };
-
-		for (const annotation of annotationsToCreate) {
-			// Type assertion is safe because we filter out 'ignore' level during collection
-			core[annotation.level as 'error' | 'warning' | 'notice'](
-				annotation.message,
-				annotation.properties,
-			);
-			if (annotation.level === 'error') tally.errors++;
-			if (annotation.level === 'warning') tally.warnings++;
-			if (annotation.level === 'notice') tally.notices++;
-			tally.total++;
-		}
-
-		if (allAnnotations.length > config.maxAnnotations) {
-			core.warning(
-				`Maximum number of annotations reached (${config.maxAnnotations}). ${
-					allAnnotations.length - config.maxAnnotations
-				} annotations were not shown.`,
-			);
-		}
-		// Set outputs for other workflow steps to use.
-		core.setOutput('errors', tally.errors);
-		core.setOutput('warnings', tally.warnings);
-		core.setOutput('notices', tally.notices);
-		core.setOutput('total', tally.total);
+		const reportFiles = await findReportFiles(config);
+		const allAnnotations = await parseAllReports(reportFiles, reportMatchers);
+		await processAnnotations(allAnnotations, config);
 	} catch (error) {
 		if (error instanceof Error) core.setFailed(error);
 		throw error;
+	}
+}
+
+/** Find report files for all configured matchers. */
+async function findReportFiles(
+	config: Config,
+): Promise<Map<string, Set<string>>> {
+	const reportMatcherPatterns = config.reports.map(report => {
+		const [matcher, patterns] = report.split('|');
+		return { matcher, patterns: patterns.split(',') };
+	});
+	const reportFiles = new Map<string, Set<string>>();
+	for (const { matcher, patterns } of reportMatcherPatterns) {
+		core.startGroup(`Finding ${matcher} reports`);
+		const files = await globFiles(patterns, config.ignore);
+		if (files.size === 0) {
+			core.warning(
+				`No reports found for ${matcher} using patterns ${patterns}`,
+			);
+			continue;
+		}
+		reportFiles.set(matcher, files);
+		core.info(`Found ${files.size} report(s) for ${matcher}`);
+		core.endGroup();
+	}
+	return reportFiles;
+}
+
+/** Parse all reports and collect annotations. */
+async function parseAllReports(
+	reportFiles: Map<string, Set<string>>,
+	reportMatchers: Record<string, ReportMatcher>,
+): Promise<PendingAnnotation[]> {
+	const allAnnotations: PendingAnnotation[] = [];
+
+	for (const [matcherName, files] of reportFiles) {
+		const matcher = reportMatchers[matcherName];
+		if (!matcher) throw new Error(`No matcher found for ${matcherName}`);
+
+		core.startGroup(`Parsing ${matcherName} reports`);
+		for (const file of files) {
+			core.debug(`Parsing ${file}`);
+			switch (matcher.format) {
+				case 'xml':
+					await parseXmlReport(file, matcher, allAnnotations);
+					break;
+				default:
+					throw new Error(
+						`Unsupported matcher format in ${matcherName}: ${matcher.format}`,
+					);
+			}
+		}
+		core.info(
+			`Parsed ${allAnnotations.length} annotation(s) from ${files.size} report(s)`,
+		);
+		core.endGroup();
+	}
+
+	return allAnnotations;
+}
+
+/** Process and create annotations with limits. */
+async function processAnnotations(
+	allAnnotations: PendingAnnotation[],
+	config: Config,
+): Promise<void> {
+	// Sort annotations by priority: errors first, then warnings, then notices
+	// Ignore level annotations are already filtered out during collection
+	const priorityOrder: Record<AnnotationLevel, number> = {
+		error: 0,
+		warning: 1,
+		notice: 2,
+		ignore: 3, // Should not appear in the array, but included for type completeness
+	};
+	allAnnotations.sort(
+		(a, b) => priorityOrder[a.level] - priorityOrder[b.level],
+	);
+
+	// Apply the per-type annotation limits to respect GitHub Actions limits
+	const maxPerType = config.maxAnnotations;
+	const errors = allAnnotations
+		.filter(a => a.level === 'error')
+		.slice(0, maxPerType);
+	const warnings = allAnnotations
+		.filter(a => a.level === 'warning')
+		.slice(0, maxPerType);
+	const notices = allAnnotations
+		.filter(a => a.level === 'notice')
+		.slice(0, maxPerType);
+	const annotationsToCreate = [...errors, ...warnings, ...notices];
+	const tally = { errors: 0, warnings: 0, notices: 0, total: 0 };
+
+	for (const annotation of annotationsToCreate) {
+		// Type assertion is safe because we filter out 'ignore' level during collection
+		core[annotation.level as 'error' | 'warning' | 'notice'](
+			annotation.message,
+			annotation.properties,
+		);
+		if (annotation.level === 'error') tally.errors++;
+		if (annotation.level === 'warning') tally.warnings++;
+		if (annotation.level === 'notice') tally.notices++;
+		tally.total++;
+	}
+
+	// Collect skipped annotations
+	const skippedErrors = allAnnotations
+		.filter(a => a.level === 'error')
+		.slice(maxPerType);
+	const skippedWarnings = allAnnotations
+		.filter(a => a.level === 'warning')
+		.slice(maxPerType);
+	const skippedNotices = allAnnotations
+		.filter(a => a.level === 'notice')
+		.slice(maxPerType);
+
+	// Warn if any annotations were skipped due to per-type limits
+	const totalSkipped =
+		skippedErrors.length + skippedWarnings.length + skippedNotices.length;
+	if (totalSkipped > 0) {
+		core.warning(
+			`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`,
+		);
+		await createSkippedAnnotationsComment(
+			skippedErrors,
+			skippedWarnings,
+			skippedNotices,
+			maxPerType,
+		);
+	}
+	// Set outputs for other workflow steps to use.
+	core.setOutput('errors', tally.errors);
+	core.setOutput('warnings', tally.warnings);
+	core.setOutput('notices', tally.notices);
+	core.setOutput('total', tally.total);
+}
+
+/** Create a PR comment with skipped annotations. */
+async function createSkippedAnnotationsComment(
+	skippedErrors: PendingAnnotation[],
+	skippedWarnings: PendingAnnotation[],
+	skippedNotices: PendingAnnotation[],
+	maxPerType: number,
+): Promise<void> {
+	// Only create comment if running on a pull request
+	if (!github.context.payload.pull_request) {
+		core.info('Not running on a pull request, skipping comment creation.');
+		return;
+	}
+
+	const octokit = github.getOctokit(
+		core.getInput('token') || process.env.GITHUB_TOKEN!,
+	);
+	const { owner, repo } = github.context.repo;
+	const pullNumber = github.context.payload.pull_request.number;
+
+	let commentBody = '## Skipped Annotations\n\n';
+	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
+
+	if (skippedErrors.length > 0) {
+		commentBody += '> **Error**\n';
+		for (const annotation of skippedErrors)
+			commentBody += `> - ${annotation.message}\n`;
+		commentBody += '\n';
+	}
+
+	if (skippedWarnings.length > 0) {
+		commentBody += '> **Warning**\n';
+		for (const annotation of skippedWarnings)
+			commentBody += `> - ${annotation.message}\n`;
+		commentBody += '\n';
+	}
+
+	if (skippedNotices.length > 0) {
+		commentBody += '> **Note**\n';
+		for (const annotation of skippedNotices)
+			commentBody += `> - ${annotation.message}\n`;
+		commentBody += '\n';
+	}
+
+	try {
+		await octokit.rest.issues.createComment({
+			owner,
+			repo,
+			issue_number: pullNumber,
+			body: commentBody,
+		});
+		core.info('Created PR comment with skipped annotations.');
+	} catch (error) {
+		core.error(`Failed to create PR comment: ${error}`);
 	}
 }
 
