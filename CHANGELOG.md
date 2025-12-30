@@ -6,7 +6,8 @@
 
 ### Fixed
 
-- Improved PR comment formatting with clickable file links when annotations are skipped
+- Improved PR comment formatting with clickable file links when annotations are
+  skipped
 - Added validation for invalid report format configuration
 - Added error handling for malformed YAML config files
 - Added error handling for invalid custom-matchers JSON input

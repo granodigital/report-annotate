@@ -25,7 +25,8 @@ inputs:
     default: '10'
   custom-matchers:
     description: |-
-      Custom matchers to use for parsing reports in JSON format: { "matcher-name": ReportMatcher }
+      Custom matchers to use for parsing reports in JSON format.
+      Example: { "matcher-name": ReportMatcher }
       See ./src/matchers for examples
   token:
     description: GitHub token for creating PR comments

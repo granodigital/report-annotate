@@ -12,3 +12,4 @@ rules:
     allow-non-breakable-inline-mappings: true
 ignore:
   - .licenses/
+  - fixtures/invalid-config.yml

@@ -25,7 +25,7 @@ MD046:
 
 # Allow hard tabs in code
 MD010:
-  ignore_code_blocks: true
+  code_blocks: false
 
 # Disable duplicate headings (for CHANGELOG.md)
 MD024: false
