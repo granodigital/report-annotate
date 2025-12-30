@@ -57,30 +57,11 @@ steps:
 
 When the maximum number of annotations per type is reached, additional
 annotations are not displayed as GitHub annotations to avoid clutter. Instead,
-they are added as a comment on the pull request using GitHub's markdown box
-syntax:
-
-- **Error** boxes for skipped error annotations
-- **Warning** boxes for skipped warning annotations
-- **Note** boxes for skipped notice annotations
-
-This ensures that all issues are still visible to developers without
-overwhelming the GitHub UI.
+they are added as a comment on the pull request.
 
 > [!NOTE] For more information about GitHub Actions annotation limitations, see
 > the
 > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
-
-> [!NOTE]
->
-> You'll need to have a reasonably modern version of
-> [Node.js](https://nodejs.org) handy (20.x or later should work!). If you are
-> using a version manager like [`nodenv`](https://github.com/nodenv/nodenv) or
-> [`fnm`](https://github.com/Schniz/fnm), this template has a `.node-version`
-> file at the root of the repository that can be used to automatically switch to
-> the correct version when you `cd` into the repository. Additionally, this
-> `.node-version` file is used by GitHub Actions in any `actions/setup-node`
-> actions.
 
 ## Custom Matchers
 

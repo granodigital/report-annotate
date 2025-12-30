@@ -56449,6 +56449,7 @@ function isArrayOfNodes(value) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const select = xpath.select ||
     // Fallback for unexpected shape; users should provide proper xpath usage.
+    /* istanbul ignore next */
     (() => {
         throw new Error('xpath.select is not available in the imported module');
     });
@@ -56541,8 +56542,12 @@ async function run() {
 /** Find report files for all configured matchers. */
 async function findReportFiles(config) {
     const reportMatcherPatterns = config.reports.map(report => {
-        const [matcher, patterns] = report.split('|');
-        return { matcher, patterns: patterns.split(',') };
+        const parts = report.split('|');
+        if (parts.length !== 2) {
+            throw new Error(`Invalid report format: '${report}'. Expected 'matcher|patterns'.`);
+        }
+        const [matcher, patternsStr] = parts;
+        return { matcher, patterns: patternsStr.split(',') };
     });
     const reportFiles = new Map();
     for (const { matcher, patterns } of reportMatcherPatterns) {
@@ -56648,26 +56653,12 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
     const { owner, repo } = githubExports.context.repo;
     const pullNumber = githubExports.context.payload.pull_request.number;
+    const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
     let commentBody = '## Skipped Annotations\n\n';
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
-    if (skippedErrors.length > 0) {
-        commentBody += '> **Error**\n';
-        for (const annotation of skippedErrors)
-            commentBody += `> - ${annotation.message}\n`;
-        commentBody += '\n';
-    }
-    if (skippedWarnings.length > 0) {
-        commentBody += '> **Warning**\n';
-        for (const annotation of skippedWarnings)
-            commentBody += `> - ${annotation.message}\n`;
-        commentBody += '\n';
-    }
-    if (skippedNotices.length > 0) {
-        commentBody += '> **Note**\n';
-        for (const annotation of skippedNotices)
-            commentBody += `> - ${annotation.message}\n`;
-        commentBody += '\n';
-    }
+    commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
+    commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
+    commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
     try {
         await octokit.rest.issues.createComment({
             owner,
@@ -56680,6 +56671,24 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     catch (error) {
         coreExports.error(`Failed to create PR comment: ${error}`);
     }
+}
+/** Generate a comment section for a specific annotation level. */
+function generateAnnotationSection(levelName, annotations, baseUrl) {
+    if (annotations.length === 0)
+        return '';
+    const noteType = `[!${levelName}]`;
+    let section = `> ${noteType}\n`;
+    for (const annotation of annotations) {
+        let line = `> ${annotation.message}`;
+        if (annotation.properties.file && annotation.properties.startLine) {
+            const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+            const link = `${baseUrl}/${location}`;
+            line = `> [${location}](${link}) ${annotation.message}`;
+        }
+        section += `${line}\n`;
+    }
+    section += '\n';
+    return section;
 }
 /** Find files using the given glob patterns. */
 async function globFiles(patterns, ignore) {
@@ -56696,9 +56705,15 @@ async function loadYamlConfig() {
     const configPath = coreExports.getInput('configPath') || DEFAULT_CONFIG_PATH;
     if (existsSync(configPath)) {
         coreExports.info(`Using config file at ${configPath}`);
-        // Parse Yaml config and merge with default config.
-        const configYaml = await readFile(configPath, 'utf8');
-        return parse(configYaml);
+        try {
+            // Parse Yaml config and merge with default config.
+            const configYaml = await readFile(configPath, 'utf8');
+            return parse(configYaml);
+        }
+        catch (error) {
+            coreExports.error(`Failed to parse YAML config at ${configPath}: ${error}`);
+            throw error;
+        }
     }
     else {
         coreExports.info(`No config file found at ${configPath}.`);
@@ -56707,13 +56722,21 @@ async function loadYamlConfig() {
 }
 /** Load the action inputs and merge with the yaml & default config. */
 async function loadConfig() {
+    let customMatchers;
+    try {
+        customMatchers = JSON.parse(coreExports.getInput('custom-matchers') || 'null');
+    }
+    catch (error) {
+        coreExports.error(`Failed to parse custom-matchers input: ${error}`);
+        throw error;
+    }
     const inputs = {
         reports: coreExports.getMultilineInput('reports'),
         ignore: coreExports.getMultilineInput('ignore'),
         maxAnnotations: coreExports.getInput('max-annotations')
             ? parseInt(coreExports.getInput('max-annotations'))
             : undefined,
-        customMatchers: JSON.parse(coreExports.getInput('custom-matchers') || 'null'),
+        customMatchers,
     };
     coreExports.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
     const yamlConfig = await loadYamlConfig();
@@ -56728,55 +56751,75 @@ async function loadConfig() {
 }
 /** Parse an XML report using the given matcher. */
 async function parseXmlReport(file, matcher, allAnnotations) {
-    const report = await readFile(file, 'utf8');
-    coreExports.debug(`Parsing report:\n${report}`);
-    const doc = new libExports.DOMParser().parseFromString(report, 'text/xml');
-    let items = select(matcher.item, doc);
-    if (!Array.isArray(items) && isNodeLike(items))
-        items = [items];
-    if (!isArrayOfNodes(items)) {
-        coreExports.warning(`No items found in ${file}`);
-        return;
-    }
-    coreExports.debug(`Found ${items.length} items in ${file}.`);
-    for (const item of items) {
-        coreExports.debug(`Processing item: ${item}.`);
-        const xpath = xpathSelect(item);
-        // Figure out the level of the annotation.
-        let level = 'error';
-        if (matcher.level) {
-            for (const [key, path] of Object.entries(matcher.level)) {
-                const check = xpath.boolean(path);
-                coreExports.debug(`Checking level ${key} with path ${path}: ${check}`);
-                if (!check)
+    try {
+        const report = await readFile(file, 'utf8');
+        coreExports.debug(`Parsing report:\n${report}`);
+        const doc = new libExports.DOMParser().parseFromString(report, 'text/xml');
+        let items = select(matcher.item, doc);
+        if (!Array.isArray(items) && isNodeLike(items))
+            items = [items];
+        if (!isArrayOfNodes(items) || items.length === 0) {
+            coreExports.warning(`No items found in ${file} using XPath '${matcher.item}'`);
+            return;
+        }
+        coreExports.debug(`Found ${items.length} items in ${file}.`);
+        for (const item of items) {
+            try {
+                coreExports.debug(`Processing item: ${item}.`);
+                const xpath = xpathSelect(item);
+                // Figure out the level of the annotation.
+                let level = 'error';
+                if (matcher.level) {
+                    for (const [key, path] of Object.entries(matcher.level)) {
+                        const check = xpath.boolean(path);
+                        coreExports.debug(`Checking level ${key} with path ${path}: ${check}`);
+                        if (!check)
+                            continue;
+                        level = key;
+                        break;
+                    }
+                }
+                // Skip if the level is ignore.
+                if (level === 'ignore') {
+                    coreExports.debug('Ignoring item.');
                     continue;
-                level = key;
-                break;
+                }
+                // Create the annotation data.
+                const message = xpath.string(matcher.message);
+                // Skip annotations with empty messages
+                if (!message.trim()) {
+                    coreExports.debug('Skipping item with empty message.');
+                    continue;
+                }
+                const properties = {
+                    title: matcher.title ? xpath.string(matcher.title) : undefined,
+                    file: matcher.file ? xpath.string(matcher.file) : undefined,
+                    startLine: matcher.startLine
+                        ? xpath.number(matcher.startLine)
+                        : undefined,
+                    endLine: matcher.endLine ? xpath.number(matcher.endLine) : undefined,
+                    startColumn: matcher.startColumn
+                        ? xpath.number(matcher.startColumn)
+                        : undefined,
+                    endColumn: matcher.endColumn
+                        ? xpath.number(matcher.endColumn)
+                        : undefined,
+                };
+                // Ensure annotations have a start line for proper display
+                if (!properties.startLine)
+                    properties.startLine = 1;
+                // Collect non-ignore annotations
+                allAnnotations.push({ level, message, properties });
+            }
+            catch (error) {
+                coreExports.warning(`Failed to process item in ${file}: ${error}`);
+                throw error; // Re-throw to fail the action on parsing errors
             }
         }
-        // Skip if the level is ignore.
-        if (level === 'ignore') {
-            coreExports.debug('Ignoring item.');
-            continue;
-        }
-        // Create the annotation data.
-        const message = xpath.string(matcher.message);
-        const properties = {
-            title: matcher.title ? xpath.string(matcher.title) : undefined,
-            file: matcher.file ? xpath.string(matcher.file) : undefined,
-            startLine: matcher.startLine
-                ? xpath.number(matcher.startLine)
-                : undefined,
-            endLine: matcher.endLine ? xpath.number(matcher.endLine) : undefined,
-            startColumn: matcher.startColumn
-                ? xpath.number(matcher.startColumn)
-                : undefined,
-            endColumn: matcher.endColumn
-                ? xpath.number(matcher.endColumn)
-                : undefined,
-        };
-        // Collect non-ignore annotations
-        allAnnotations.push({ level, message, properties });
+    }
+    catch (error) {
+        coreExports.error(`Failed to parse XML report ${file}: ${error}`);
+        throw error;
     }
 }
 

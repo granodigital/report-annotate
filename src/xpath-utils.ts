@@ -120,6 +120,7 @@ export function isArrayOfNodes(value: unknown): value is Node[] {
 export const select: any =
 	(xpath as unknown as { select?: unknown }).select ||
 	// Fallback for unexpected shape; users should provide proper xpath usage.
+	/* istanbul ignore next */
 	(() => {
 		throw new Error('xpath.select is not available in the imported module');
 	});

@@ -109,8 +109,14 @@ async function findReportFiles(
 	config: Config,
 ): Promise<Map<string, Set<string>>> {
 	const reportMatcherPatterns = config.reports.map(report => {
-		const [matcher, patterns] = report.split('|');
-		return { matcher, patterns: patterns.split(',') };
+		const parts = report.split('|');
+		if (parts.length !== 2) {
+			throw new Error(
+				`Invalid report format: '${report}'. Expected 'matcher|patterns'.`,
+			);
+		}
+		const [matcher, patternsStr] = parts;
+		return { matcher, patterns: patternsStr.split(',') };
 	});
 	const reportFiles = new Map<string, Set<string>>();
 	for (const { matcher, patterns } of reportMatcherPatterns) {
@@ -255,30 +261,14 @@ async function createSkippedAnnotationsComment(
 	);
 	const { owner, repo } = github.context.repo;
 	const pullNumber = github.context.payload.pull_request.number;
+	const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
 
 	let commentBody = '## Skipped Annotations\n\n';
 	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
 
-	if (skippedErrors.length > 0) {
-		commentBody += '> **Error**\n';
-		for (const annotation of skippedErrors)
-			commentBody += `> - ${annotation.message}\n`;
-		commentBody += '\n';
-	}
-
-	if (skippedWarnings.length > 0) {
-		commentBody += '> **Warning**\n';
-		for (const annotation of skippedWarnings)
-			commentBody += `> - ${annotation.message}\n`;
-		commentBody += '\n';
-	}
-
-	if (skippedNotices.length > 0) {
-		commentBody += '> **Note**\n';
-		for (const annotation of skippedNotices)
-			commentBody += `> - ${annotation.message}\n`;
-		commentBody += '\n';
-	}
+	commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
+	commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
+	commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
 
 	try {
 		await octokit.rest.issues.createComment({
@@ -291,6 +281,29 @@ async function createSkippedAnnotationsComment(
 	} catch (error) {
 		core.error(`Failed to create PR comment: ${error}`);
 	}
+}
+
+/** Generate a comment section for a specific annotation level. */
+function generateAnnotationSection(
+	levelName: string,
+	annotations: PendingAnnotation[],
+	baseUrl: string,
+): string {
+	if (annotations.length === 0) return '';
+
+	const noteType = `[!${levelName}]`;
+	let section = `> ${noteType}\n`;
+	for (const annotation of annotations) {
+		let line = `> ${annotation.message}`;
+		if (annotation.properties.file && annotation.properties.startLine) {
+			const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+			const link = `${baseUrl}/${location}`;
+			line = `> [${location}](${link}) ${annotation.message}`;
+		}
+		section += `${line}\n`;
+	}
+	section += '\n';
+	return section;
 }
 
 /** Find files using the given glob patterns. */
@@ -311,9 +324,14 @@ async function loadYamlConfig(): Promise<Partial<Config>> {
 	const configPath: string = core.getInput('configPath') || DEFAULT_CONFIG_PATH;
 	if (existsSync(configPath)) {
 		core.info(`Using config file at ${configPath}`);
-		// Parse Yaml config and merge with default config.
-		const configYaml = await readFile(configPath, 'utf8');
-		return parse(configYaml) as Partial<Config>;
+		try {
+			// Parse Yaml config and merge with default config.
+			const configYaml = await readFile(configPath, 'utf8');
+			return parse(configYaml) as Partial<Config>;
+		} catch (error) {
+			core.error(`Failed to parse YAML config at ${configPath}: ${error}`);
+			throw error;
+		}
 	} else {
 		core.info(`No config file found at ${configPath}.`);
 		return {};
@@ -322,13 +340,20 @@ async function loadYamlConfig(): Promise<Partial<Config>> {
 
 /** Load the action inputs and merge with the yaml & default config. */
 async function loadConfig(): Promise<Config> {
+	let customMatchers: Record<string, ReportMatcher> | undefined;
+	try {
+		customMatchers = JSON.parse(core.getInput('custom-matchers') || 'null');
+	} catch (error) {
+		core.error(`Failed to parse custom-matchers input: ${error}`);
+		throw error;
+	}
 	const inputs: Partial<Config> = {
 		reports: core.getMultilineInput('reports'),
 		ignore: core.getMultilineInput('ignore'),
 		maxAnnotations: core.getInput('max-annotations')
 			? parseInt(core.getInput('max-annotations'))
 			: undefined,
-		customMatchers: JSON.parse(core.getInput('custom-matchers') || 'null'),
+		customMatchers,
 	};
 	core.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
 	const yamlConfig = await loadYamlConfig();
@@ -350,55 +375,75 @@ async function parseXmlReport(
 	matcher: ReportMatcher,
 	allAnnotations: PendingAnnotation[],
 ): Promise<void> {
-	const report = await readFile(file, 'utf8');
-	core.debug(`Parsing report:\n${report}`);
-	const doc = new DOMParser().parseFromString(report, 'text/xml');
-	let items = select(matcher.item, doc);
-	if (!Array.isArray(items) && isNodeLike(items)) items = [items];
-	if (!isArrayOfNodes(items)) {
-		core.warning(`No items found in ${file}`);
-		return;
-	}
-	core.debug(`Found ${items.length} items in ${file}.`);
+	try {
+		const report = await readFile(file, 'utf8');
+		core.debug(`Parsing report:\n${report}`);
+		const doc = new DOMParser().parseFromString(report, 'text/xml');
+		let items = select(matcher.item, doc);
+		if (!Array.isArray(items) && isNodeLike(items)) items = [items];
+		if (!isArrayOfNodes(items) || items.length === 0) {
+			core.warning(`No items found in ${file} using XPath '${matcher.item}'`);
+			return;
+		}
+		core.debug(`Found ${items.length} items in ${file}.`);
 
-	for (const item of items) {
-		core.debug(`Processing item: ${item}.`);
-		const xpath = xpathSelect(item);
-		// Figure out the level of the annotation.
-		let level: AnnotationLevel = 'error';
-		if (matcher.level) {
-			for (const [key, path] of Object.entries(matcher.level)) {
-				const check = xpath.boolean(path);
-				core.debug(`Checking level ${key} with path ${path}: ${check}`);
-				if (!check) continue;
-				level = key as AnnotationLevel;
-				break;
+		for (const item of items) {
+			try {
+				core.debug(`Processing item: ${item}.`);
+				const xpath = xpathSelect(item);
+				// Figure out the level of the annotation.
+				let level: AnnotationLevel = 'error';
+				if (matcher.level) {
+					for (const [key, path] of Object.entries(matcher.level)) {
+						const check = xpath.boolean(path);
+						core.debug(`Checking level ${key} with path ${path}: ${check}`);
+						if (!check) continue;
+						level = key as AnnotationLevel;
+						break;
+					}
+				}
+				// Skip if the level is ignore.
+				if (level === 'ignore') {
+					core.debug('Ignoring item.');
+					continue;
+				}
+
+				// Create the annotation data.
+				const message = xpath.string(matcher.message);
+
+				// Skip annotations with empty messages
+				if (!message.trim()) {
+					core.debug('Skipping item with empty message.');
+					continue;
+				}
+
+				const properties = {
+					title: matcher.title ? xpath.string(matcher.title) : undefined,
+					file: matcher.file ? xpath.string(matcher.file) : undefined,
+					startLine: matcher.startLine
+						? xpath.number(matcher.startLine)
+						: undefined,
+					endLine: matcher.endLine ? xpath.number(matcher.endLine) : undefined,
+					startColumn: matcher.startColumn
+						? xpath.number(matcher.startColumn)
+						: undefined,
+					endColumn: matcher.endColumn
+						? xpath.number(matcher.endColumn)
+						: undefined,
+				} satisfies core.AnnotationProperties;
+
+				// Ensure annotations have a start line for proper display
+				if (!properties.startLine) properties.startLine = 1;
+
+				// Collect non-ignore annotations
+				allAnnotations.push({ level, message, properties });
+			} catch (error) {
+				core.warning(`Failed to process item in ${file}: ${error}`);
+				throw error; // Re-throw to fail the action on parsing errors
 			}
 		}
-		// Skip if the level is ignore.
-		if (level === 'ignore') {
-			core.debug('Ignoring item.');
-			continue;
-		}
-
-		// Create the annotation data.
-		const message = xpath.string(matcher.message);
-		const properties = {
-			title: matcher.title ? xpath.string(matcher.title) : undefined,
-			file: matcher.file ? xpath.string(matcher.file) : undefined,
-			startLine: matcher.startLine
-				? xpath.number(matcher.startLine)
-				: undefined,
-			endLine: matcher.endLine ? xpath.number(matcher.endLine) : undefined,
-			startColumn: matcher.startColumn
-				? xpath.number(matcher.startColumn)
-				: undefined,
-			endColumn: matcher.endColumn
-				? xpath.number(matcher.endColumn)
-				: undefined,
-		} satisfies core.AnnotationProperties;
-
-		// Collect non-ignore annotations
-		allAnnotations.push({ level, message, properties });
+	} catch (error) {
+		core.error(`Failed to parse XML report ${file}: ${error}`);
+		throw error;
 	}
 }

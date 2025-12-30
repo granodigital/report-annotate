@@ -355,6 +355,9 @@ at Tests.Registration.main(Registration.java:202)`,
 	it('should handle reports with no items', async () => {
 		testInputs.reports = ['junit|fixtures/empty-report.xml'];
 		await main.run();
+		expect(warningMock).toHaveBeenCalledWith(
+			"No items found in fixtures/empty-report.xml using XPath '//testcase'",
+		);
 		expect(errorMock).not.toHaveBeenCalled();
 		expect(setOutputMock).toHaveBeenCalledWith('errors', 0);
 		expect(setOutputMock).toHaveBeenCalledWith('warnings', 0);
@@ -431,5 +434,54 @@ at Tests.Registration.main(Registration.java:202)`,
 		expect(errorMock).toHaveBeenCalledWith(
 			`Failed to create PR comment: ${apiError}`,
 		);
+	});
+
+	it('should throw error for invalid report format', async () => {
+		testInputs.reports = ['invalid-format-no-pipe'];
+		await expect(main.run()).rejects.toThrow(
+			"Invalid report format: 'invalid-format-no-pipe'. Expected 'matcher|patterns'.",
+		);
+	});
+
+	it('should handle missing config file', async () => {
+		testInputs.configPath = '/nonexistent/config.yml';
+		await main.run();
+		expect(infoMock).toHaveBeenCalledWith(
+			'No config file found at /nonexistent/config.yml.',
+		);
+	});
+
+	it('should throw error for invalid custom-matchers JSON', async () => {
+		testInputs['custom-matchers'] = '{invalid json';
+		await expect(main.run()).rejects.toThrow();
+		expect(errorMock).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to parse custom-matchers input'),
+		);
+	});
+
+	it('should throw error for invalid YAML config', async () => {
+		testInputs.configPath = 'fixtures/invalid-config.yml';
+		await expect(main.run()).rejects.toThrow();
+		expect(errorMock).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'Failed to parse YAML config at fixtures/invalid-config.yml',
+			),
+		);
+	});
+
+	it('should skip items with empty messages', async () => {
+		testInputs['custom-matchers'] = `{
+			"custom-matcher": {
+				"format": "xml",
+				"item": "//testCase",
+				"message": "@empty",
+				"file": "@file",
+				"startLine": "@line"
+			}
+		}`;
+		testInputs.reports = ['custom-matcher|fixtures/custom-format.xml'];
+		await main.run();
+		// Should not create any annotations since message is empty
+		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
 	});
 });

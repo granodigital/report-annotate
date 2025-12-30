@@ -1,0 +1,7 @@
+reports:
+  - junit|fixtures/junit-generic.xml
+maxAnnotations: 10
+invalid: yaml: content:
+  - with
+    bad: indentation
+    [unclosed bracket
