@@ -6,7 +6,8 @@
 
 ### Fixed
 
-- Fixed PR comments to escape words starting with @ to prevent GitHub user mention triggers for decorators
+- Fixed PR comments to escape words starting with @ to prevent GitHub user
+  mention triggers for decorators
 
 ## [3.1.0] - 2025-12-30
 
