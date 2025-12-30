@@ -47,7 +47,7 @@ steps:
 
 | Name              | Description                                                                                                                    | Default                          |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."` For example: `"junit-eslint\|junit/lint.xml"`                               | `["junit\|junit/*.xml"]`         |
+| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                      | `["junit\|junit/*.xml"]`         |
 | `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                         | `['node_modules/**', 'dist/**']` |
 | `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                  | `10`                             |
 | `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples |                                  |

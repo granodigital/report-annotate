@@ -6,15 +6,18 @@
 
 ### Added
 
-- Added PR comment minimization functionality to hide previous bot comments before creating new ones
+- Added PR comment minimization functionality to hide previous bot comments
+  before creating new ones
 - Added comprehensive GraphQL support for PR comment management with pagination
-- Enhanced release script to automatically create GitHub releases with auto-generated notes
-- Added repository detection from git remote URL in release script
+- Enhanced release script to automatically create GitHub releases with
+  auto-generated notes
+- Added repository detection from Git remote URL in release script
 
 ### Fixed
 
-- Fixed lint errors by allowing 'any' types in test files
-- Added comprehensive test coverage for edge cases including pagination failures and API errors
+- Fixed linting errors by allowing 'any' types in test files
+- Added comprehensive test coverage for edge cases including pagination failures
+  and API errors
 - Improved error handling in PR comment operations
 
 ## [3.0.1] - 2025-12-30

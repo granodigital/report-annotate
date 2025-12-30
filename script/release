@@ -155,7 +155,7 @@ else
 fi
 
 # Check if gh CLI is available
-if ! command -v gh &> /dev/null; then
+if ! command -v gh &>/dev/null; then
 	echo -e "${BOLD_RED}GitHub CLI (gh) is not installed. Please install it to create releases automatically.${OFF}"
 	echo -e "You can manually create the release at: https://github.com/$github_repository/releases/new"
 	echo -e "Tag: ${BOLD_BLUE}$new_tag${OFF}"
@@ -163,7 +163,7 @@ if ! command -v gh &> /dev/null; then
 fi
 
 # Check if user is authenticated with GitHub CLI
-if ! gh auth status &> /dev/null; then
+if ! gh auth status &>/dev/null; then
 	echo -e "${BOLD_RED}Not authenticated with GitHub CLI. Please run 'gh auth login' first.${OFF}"
 	echo -e "You can manually create the release at: https://github.com/$github_repository/releases/new"
 	echo -e "Tag: ${BOLD_BLUE}$new_tag${OFF}"
