@@ -56736,11 +56736,12 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
     const noteType = `[!${levelName}]`;
     let section = `> ${noteType}\n`;
     for (const annotation of annotations) {
-        let line = `> ${annotation.message}`;
+        let message = annotation.message.replace(/@\w+/g, '`$&`');
+        let line = `> ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
             const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
             const link = `${baseUrl}/${location}`;
-            line = `> [${location}](${link}) ${annotation.message}`;
+            line = `> [${location}](${link}) ${message}`;
         }
         section += `${line}\n`;
     }
