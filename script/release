@@ -24,6 +24,7 @@ set -e
 # 8. Point separate major release tag (e.g. v1, v2) to the new release
 # 9. Push the new tags (with commits, if any) to remote
 # 10. If this is a major release, create a 'releases/v#' branch and push
+# 11. Create a GitHub release with auto-generated release notes
 #
 # Usage:
 #
@@ -127,6 +128,58 @@ if [ $is_major_release = 'yes' ]; then
 	echo -e "Branch: ${BOLD_BLUE}releases/$new_major_release_tag${OFF} created from ${BOLD_BLUE}$new_major_release_tag${OFF} tag"
 	git push --set-upstream $git_remote "releases/$new_major_release_tag"
 	echo -e "Branch: ${BOLD_GREEN}releases/$new_major_release_tag${OFF} pushed to remote"
+fi
+
+# 11. Create a GitHub release
+echo -e "Creating GitHub release for ${BOLD_BLUE}$new_tag${OFF}..."
+
+# Get repository information from git remote
+if ! remote_url=$(git remote get-url origin 2>/dev/null); then
+	echo -e "${BOLD_RED}Failed to get git remote URL. Please ensure you're in a git repository with an 'origin' remote.${OFF}"
+	exit 1
+fi
+
+# Extract owner/repo from remote URL
+# Handle both HTTPS and SSH formats:
+# https://github.com/owner/repo.git -> owner/repo
+# git@github.com:owner/repo.git -> owner/repo
+if [[ $remote_url =~ github\.com[/:]([^/]+)/([^/.]+) ]]; then
+	repo_owner="${BASH_REMATCH[1]}"
+	repo_name="${BASH_REMATCH[2]}"
+	github_repository="$repo_owner/$repo_name"
+	echo -e "Detected repository: ${BOLD_BLUE}$github_repository${OFF}"
+else
+	echo -e "${BOLD_RED}Could not parse repository information from git remote URL: $remote_url${OFF}"
+	echo -e "Expected format: https://github.com/owner/repo or git@github.com:owner/repo"
+	exit 1
+fi
+
+# Check if gh CLI is available
+if ! command -v gh &> /dev/null; then
+	echo -e "${BOLD_RED}GitHub CLI (gh) is not installed. Please install it to create releases automatically.${OFF}"
+	echo -e "You can manually create the release at: https://github.com/$github_repository/releases/new"
+	echo -e "Tag: ${BOLD_BLUE}$new_tag${OFF}"
+	exit 1
+fi
+
+# Check if user is authenticated with GitHub CLI
+if ! gh auth status &> /dev/null; then
+	echo -e "${BOLD_RED}Not authenticated with GitHub CLI. Please run 'gh auth login' first.${OFF}"
+	echo -e "You can manually create the release at: https://github.com/$github_repository/releases/new"
+	echo -e "Tag: ${BOLD_BLUE}$new_tag${OFF}"
+	exit 1
+fi
+
+# Generate release notes automatically
+echo -e "Generating release notes..."
+if gh release create "$new_tag" --generate-notes --draft --repo "$github_repository"; then
+	echo -e "Draft release created: ${BOLD_GREEN}$new_tag${OFF}"
+	echo -e "Please review and publish the release at: https://github.com/$github_repository/releases"
+else
+	echo -e "${BOLD_RED}Failed to create GitHub release.${OFF}"
+	echo -e "You can manually create the release at: https://github.com/$github_repository/releases/new"
+	echo -e "Tag: ${BOLD_BLUE}$new_tag${OFF}"
+	exit 1
 fi
 
 # Completed

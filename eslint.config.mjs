@@ -82,4 +82,10 @@ export default [
 			'prettier/prettier': 'error',
 		},
 	},
+	{
+		files: ['__tests__/**/*.ts'],
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'off',
+		},
+	},
 ];

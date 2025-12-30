@@ -56654,6 +56654,8 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const { owner, repo } = githubExports.context.repo;
     const pullNumber = githubExports.context.payload.pull_request.number;
     const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
+    // Minimize previous bot comments before adding a new one
+    await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
     let commentBody = '## Skipped Annotations\n\n';
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
     commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
@@ -56670,6 +56672,61 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     }
     catch (error) {
         coreExports.error(`Failed to create PR comment: ${error}`);
+    }
+}
+/** Minimize previous bot comments on the PR. */
+async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
+    try {
+        // Fetch all comments on the PR, handling pagination
+        const allComments = [];
+        let page = 1;
+        const perPage = 100;
+        while (true) {
+            const response = await octokit.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: pullNumber,
+                page,
+                per_page: perPage,
+            });
+            allComments.push(...response.data);
+            if (response.data.length < perPage)
+                break;
+            page++;
+        }
+        // Filter for bot comments (comments created by this action)
+        const botComments = allComments.filter(comment => comment.body?.startsWith('## Skipped Annotations'));
+        if (botComments.length === 0) {
+            coreExports.debug('No previous bot comments to minimize.');
+            return;
+        }
+        coreExports.debug(`Found ${botComments.length} previous bot comments to minimize.`);
+        // Minimize each bot comment
+        for (const comment of botComments) {
+            try {
+                await octokit.graphql(`
+					mutation MinimizeComment($input: MinimizeCommentInput!) {
+						minimizeComment(input: $input) {
+							minimizedComment {
+								isMinimized
+							}
+						}
+					}
+				`, {
+                    input: {
+                        subjectId: comment.node_id,
+                        classifier: 'OUTDATED',
+                    },
+                });
+                coreExports.debug(`Minimized comment ${comment.id}`);
+            }
+            catch (error) {
+                coreExports.warning(`Failed to minimize comment ${comment.id}: ${error}`);
+            }
+        }
+    }
+    catch (error) {
+        coreExports.warning(`Failed to minimize previous bot comments: ${error}`);
     }
 }
 /** Generate a comment section for a specific annotation level. */

@@ -58,7 +58,6 @@ await jest.unstable_mockModule('@actions/github', async () => {
 			payload: {},
 			repo: { owner: 'test-owner', repo: 'test-repo' },
 		},
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	} as any;
 });
 
@@ -83,9 +82,11 @@ let setOutputMock: jest.Mock;
 let mockOctokit: {
 	rest: {
 		issues: {
-			createComment: jest.Mock;
+			createComment: jest.Mock<any>;
+			listComments: jest.Mock<any>;
 		};
 	};
+	graphql: jest.Mock<any>;
 };
 
 describe('action', () => {
@@ -140,8 +141,10 @@ describe('action', () => {
 			rest: {
 				issues: {
 					createComment: jest.fn(),
+					listComments: jest.fn(),
 				},
 			},
+			graphql: jest.fn(),
 		};
 		githubMocks.getOctokit.mockReturnValue(mockOctokit);
 	});
@@ -406,9 +409,41 @@ at Tests.Registration.main(Registration.java:202)`,
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(mockOctokit.rest.issues.createComment as any).mockResolvedValue({});
+		// Mock listComments to return some previous bot comments
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Skipped Annotations\n\nOld comment',
+				},
+				{
+					id: 2,
+					node_id: 'comment2',
+					body: 'Some other comment',
+				},
+			],
+		});
+		// Mock graphql for minimizing comments
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
 		await main.run();
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledWith({
+			owner: 'test-owner',
+			repo: 'test-repo',
+			issue_number: 123,
+			page: 1,
+			per_page: 100,
+		});
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{
+				input: {
+					subjectId: 'comment1',
+					classifier: 'OUTDATED',
+				},
+			},
+		);
 		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith({
 			owner: 'test-owner',
 			repo: 'test-repo',
@@ -427,13 +462,107 @@ at Tests.Registration.main(Registration.java:202)`,
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listComments
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [],
+		});
+		// Mock graphql
+		mockOctokit.graphql.mockResolvedValue({});
 		const apiError = new Error('API Error');
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(mockOctokit.rest.issues.createComment as any).mockRejectedValue(apiError);
+		mockOctokit.rest.issues.createComment.mockRejectedValue(apiError);
 		await main.run();
 		expect(errorMock).toHaveBeenCalledWith(
 			`Failed to create PR comment: ${apiError}`,
 		);
+	});
+
+	it('should handle pagination when fetching comments', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123 },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		// Mock listComments to return full page on first call, then empty page
+		mockOctokit.rest.issues.listComments
+			.mockResolvedValueOnce({
+				data: Array(100)
+					.fill(null)
+					.map((_, i) => ({
+						id: i + 1,
+						node_id: `comment${i + 1}`,
+						body: '## Skipped Annotations\n\nOld comment',
+					})),
+			})
+			.mockResolvedValueOnce({
+				data: [],
+			});
+		// Mock graphql for minimizing comments
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledTimes(2);
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledWith({
+			owner: 'test-owner',
+			repo: 'test-repo',
+			issue_number: 123,
+			page: 1,
+			per_page: 100,
+		});
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledWith({
+			owner: 'test-owner',
+			repo: 'test-repo',
+			issue_number: 123,
+			page: 2,
+			per_page: 100,
+		});
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(100);
+	});
+
+	it('should handle GraphQL minimization failure for individual comments', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123 },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		// Mock listComments to return bot comments
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Skipped Annotations\n\nOld comment',
+				},
+			],
+		});
+		// Mock graphql to fail for minimization
+		const graphqlError = new Error('GraphQL Error');
+		mockOctokit.graphql.mockRejectedValue(graphqlError);
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		expect(warningMock).toHaveBeenCalledWith(
+			'Failed to minimize comment 1: Error: GraphQL Error',
+		);
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+	});
+
+	it('should handle listComments API failure', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123 },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		// Mock listComments to fail
+		const apiError = new Error('API Error');
+		mockOctokit.rest.issues.listComments.mockRejectedValue(apiError);
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		expect(warningMock).toHaveBeenCalledWith(
+			'Failed to minimize previous bot comments: Error: API Error',
+		);
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
 	});
 
 	it('should throw error for invalid report format', async () => {
