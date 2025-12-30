@@ -26,7 +26,7 @@ steps:
   - name: Report Annotate
     id: annotate
     if: always() # Run with test/lint failures.
-    uses: granodigital/report-annotate@v1
+    uses: granodigital/report-annotate@v3
     with:
       reports: |
         junit|reports/junit-generic.xml
@@ -78,7 +78,7 @@ Feel free to open a PR to add support for new report formats or matchers.
 - name: Report Annotate
   id: annotate
   if: always() # Run with test/lint failures.
-  uses: granodigital/report-annotate@v1
+  uses: granodigital/report-annotate@v3
   with:
     reports: my-matcher|reports/*.xml
     custom-matchers: |
