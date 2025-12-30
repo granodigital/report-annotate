@@ -45,13 +45,13 @@ steps:
 
 ## Inputs
 
-| Name              | Description                                                                                                                       | Default                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."`<br>For example: `"junit-eslint\|junit/lint.xml"`                               | `["junit\|junit/*.xml"]`         |
-| `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                            | `['node_modules/**', 'dist/**']` |
-| `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                     | `10`                             |
-| `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }`<br>See ./src/matchers for examples |                                  |
-| `token`           | GitHub token for creating PR comments when annotations are skipped                                                                | `${{ github.token }}`            |
+| Name              | Description                                                                                                                    | Default                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."` For example: `"junit-eslint\|junit/lint.xml"`                               | `["junit\|junit/*.xml"]`         |
+| `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                         | `['node_modules/**', 'dist/**']` |
+| `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                  | `10`                             |
+| `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples |                                  |
+| `token`           | GitHub token for creating PR comments when annotations are skipped                                                             | `${{ github.token }}`            |
 
 ## Skipped Annotations
 
@@ -59,8 +59,9 @@ When the maximum number of annotations per type is reached, additional
 annotations are not displayed as GitHub annotations to avoid clutter. Instead,
 they are added as a comment on the pull request.
 
-> [!NOTE] For more information about GitHub Actions annotation limitations, see
-> the
+<!-- prettier-ignore -->
+> [!NOTE]
+> For more information about GitHub Actions annotation limitations, see the
 > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 ## Custom Matchers
