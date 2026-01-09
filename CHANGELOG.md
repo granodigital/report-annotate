@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- Changed error markdown panel from `[!ERROR]` to `[!CAUTION]` as ERROR is not a
+- Changed error Markdown panel from `[!ERROR]` to `[!CAUTION]` as ERROR is not a
   supported GitHub alert type
 
 ## [3.1.1] - 2025-12-30
