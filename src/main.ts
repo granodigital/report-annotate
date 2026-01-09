@@ -269,7 +269,7 @@ async function createSkippedAnnotationsComment(
 	let commentBody = '## Skipped Annotations\n\n';
 	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
 
-	commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
+	commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
 	commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
 	commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
 
