@@ -6,8 +6,8 @@
 
 ### Fixed
 
-- Changed error Markdown panel from `[!ERROR]` to `[!CAUTION]` as ERROR is
-  not a supported GitHub alert type
+- Changed error Markdown panel from `[!ERROR]` to `[!CAUTION]` as ERROR is not a
+  supported GitHub alert type
 - Fixed duplicate `@mention` escaping in PR comments if already escaped
 - Fixed file being relative to runner root instead of repository root in PR
   comments
@@ -17,6 +17,7 @@
 ### Improved
 
 - Truncate long file paths in PR comments for better readability
+
 ## [3.1.1] - 2025-12-30
 
 ### Fixed
