@@ -679,6 +679,17 @@ at Tests.Registration.main(Registration.java:202)`,
 		});
 	});
 
+	describe('getDiffId', () => {
+		it('should generate SHA256 hash for file path', () => {
+			expect(main.getDiffId('src/index.js')).toBe(
+				'bfe9874d239014961b1ae4e89875a6155667db834a410aaaa2ebe3cf89820556',
+			);
+			expect(main.getDiffId('src/modules/products/dto/product.dto.ts')).toBe(
+				'58d7002fa09097d6e54eec04b3ba865011f947ebb601513ede5829785248e69f',
+			);
+		});
+	});
+
 	describe('generateAnnotationSection', () => {
 		it('should return empty string for no annotations', () => {
 			expect(
@@ -707,7 +718,7 @@ at Tests.Registration.main(Registration.java:202)`,
 				'[.../modules/products/dto/product.dto.ts#L167]',
 			);
 			expect(result).toContain(
-				'(https://github.com/owner/repo/pull/123/files/src/modules/products/dto/product.dto.ts#L167)',
+				'(https://github.com/owner/repo/pull/123/files#diff-58d7002fa09097d6e54eec04b3ba865011f947ebb601513ede5829785248e69f)',
 			);
 		});
 

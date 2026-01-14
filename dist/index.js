@@ -30,6 +30,7 @@ import require$$6$1 from 'timers';
 import * as actualFS from 'node:fs';
 import { existsSync } from 'node:fs';
 import { realpath, readlink, readdir, lstat, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { win32, posix } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -56745,6 +56746,10 @@ function truncateFilePath(filePath) {
     }
     return '...' + '/' + parts.slice(-4).join('/');
 }
+/** Generate the diff ID for a file path in GitHub PR files view. */
+function getDiffId(filePath) {
+    return createHash('sha256').update(filePath).digest('hex');
+}
 /** Generate a comment section for a specific annotation level. */
 function generateAnnotationSection(levelName, annotations, baseUrl) {
     if (annotations.length === 0)
@@ -56756,8 +56761,8 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
         let line = `> ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
             const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
-            const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-            const link = `${baseUrl}/${linkLocation}`;
+            const diffId = getDiffId(annotation.properties.file);
+            const link = `${baseUrl}#diff-${diffId}`;
             line = `> [${displayLocation}](${link}) ${message}`;
         }
         section += `${line}\n`;

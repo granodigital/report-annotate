@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
 import { glob } from 'glob';
 import { junitEslintMatcher } from './matchers/junit-eslint.js';
@@ -379,6 +380,11 @@ export function truncateFilePath(filePath: string): string {
 	return '...' + '/' + parts.slice(-4).join('/');
 }
 
+/** Generate the diff ID for a file path in GitHub PR files view. */
+export function getDiffId(filePath: string): string {
+	return createHash('sha256').update(filePath).digest('hex');
+}
+
 /** Generate a comment section for a specific annotation level. */
 export function generateAnnotationSection(
 	levelName: string,
@@ -394,8 +400,8 @@ export function generateAnnotationSection(
 		let line = `> ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
 			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
-			const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-			const link = `${baseUrl}/${linkLocation}`;
+			const diffId = getDiffId(annotation.properties.file);
+			const link = `${baseUrl}#diff-${diffId}`;
 			line = `> [${displayLocation}](${link}) ${message}`;
 		}
 		section += `${line}\n`;

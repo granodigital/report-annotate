@@ -2,6 +2,13 @@
 
 # Changelog
 
+## [3.1.3] - 2026-01-14
+
+### Fixed
+
+- Fixed PR file links to use proper diff anchors instead of file path URLs,
+  keeping users in PR context navigation
+
 ## [3.1.2] - 2026-01-14
 
 ### Fixed
