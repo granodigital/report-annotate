@@ -379,7 +379,7 @@ export function generateAnnotationSection(
 	const noteType = `[!${levelName}]`;
 	let section = `> ${noteType}\n`;
 	for (const annotation of annotations) {
-		const message = annotation.message.replace(/@\w+/g, '`$&`');
+		const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
 		let line = `> ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
 			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;

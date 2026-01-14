@@ -664,5 +664,43 @@ at Tests.Registration.main(Registration.java:202)`,
 				'(https://github.com/owner/repo/pull/123/files/src/modules/products/dto/product.dto.ts#L167)',
 			);
 		});
+
+		it('should escape @mentions in messages', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message:
+						'Use InputSignals (e.g. via input()) for Component input properties rather than the legacy @Input() decorator',
+					properties: {},
+				},
+			];
+			const result = main.generateAnnotationSection(
+				'CAUTION',
+				annotations,
+				'https://example.com',
+			);
+			expect(result).toContain(
+				'Use InputSignals (e.g. via input()) for Component input properties rather than the legacy `@Input`() decorator',
+			);
+		});
+
+		it('should not add duplicate escaping for messages already containing code formatting', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message:
+						'Avoid using `@Output()` decorators. Use OutputSignals (e.g. via output()) instead.',
+					properties: {},
+				},
+			];
+			const result = main.generateAnnotationSection(
+				'CAUTION',
+				annotations,
+				'https://example.com',
+			);
+			expect(result).toContain(
+				'Avoid using `@Output()` decorators. Use OutputSignals (e.g. via output()) instead.',
+			);
+		});
 	});
 });
