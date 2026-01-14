@@ -39,7 +39,7 @@ export interface Config {
 
 type AnnotationLevel = 'notice' | 'warning' | 'error' | 'ignore';
 
-interface PendingAnnotation {
+export interface PendingAnnotation {
 	level: AnnotationLevel;
 	message: string;
 	properties: core.AnnotationProperties;
@@ -359,8 +359,17 @@ async function minimizePreviousBotComments(
 	}
 }
 
+/** Truncate file path to show at most 4 directories. */
+export function truncateFilePath(filePath: string): string {
+	const parts = filePath.split('/');
+	if (parts.length <= 4) {
+		return filePath;
+	}
+	return '...' + '/' + parts.slice(-4).join('/');
+}
+
 /** Generate a comment section for a specific annotation level. */
-function generateAnnotationSection(
+export function generateAnnotationSection(
 	levelName: string,
 	annotations: PendingAnnotation[],
 	baseUrl: string,
@@ -373,9 +382,10 @@ function generateAnnotationSection(
 		const message = annotation.message.replace(/@\w+/g, '`$&`');
 		let line = `> ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
-			const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-			const link = `${baseUrl}/${location}`;
-			line = `> [${location}](${link}) ${message}`;
+			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
+			const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+			const link = `${baseUrl}/${linkLocation}`;
+			line = `> [${displayLocation}](${link}) ${message}`;
 		}
 		section += `${line}\n`;
 	}
@@ -508,6 +518,14 @@ async function parseXmlReport(
 						? xpath.number(matcher.endColumn)
 						: undefined,
 				} satisfies core.AnnotationProperties;
+
+				// Make file path relative to workspace
+				if (properties.file) {
+					const workspace = process.env.GITHUB_WORKSPACE;
+					if (workspace && properties.file.startsWith(workspace + '/')) {
+						properties.file = properties.file.slice(workspace.length + 1);
+					}
+				}
 
 				// Ensure annotations have a start line for proper display
 				if (!properties.startLine) properties.startLine = 1;

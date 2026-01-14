@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { PendingAnnotation } from '../src/main';
 
 // Type for mutable context in tests
 type MutableContext = Omit<Context, 'payload' | 'repo'> & {
@@ -92,6 +93,8 @@ let mockOctokit: {
 describe('action', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		// Mock GITHUB_WORKSPACE to match fixture paths
+		process.env.GITHUB_WORKSPACE = '/home/runner/work/repo-name/repo-name';
 		// Reset GitHub context
 		(github.context as MutableContext).payload = {};
 		(github.context as MutableContext).repo = {
@@ -156,7 +159,7 @@ describe('action', () => {
 			{
 				endColumn: undefined,
 				endLine: undefined,
-				file: '/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils.ts',
+				file: 'cypress/plugins/s3-email-client/s3-utils.ts',
 				startColumn: 28,
 				startLine: 7,
 				title: '@typescript-eslint/dot-notation',
@@ -165,7 +168,7 @@ describe('action', () => {
 		expect(warningMock).toHaveBeenCalledWith('Missing JSDoc comment.', {
 			endColumn: undefined,
 			endLine: undefined,
-			file: '/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils.ts',
+			file: 'cypress/plugins/s3-email-client/s3-utils.ts',
 			startColumn: 18,
 			startLine: 2,
 			title: 'jsdoc/require-jsdoc',
@@ -296,7 +299,7 @@ at Tests.Registration.main(Registration.java:202)`,
 			{
 				endColumn: undefined,
 				endLine: undefined,
-				file: '/home/runner/work/repo-name/repo-name/cypress/plugins/s3-email-client/s3-utils.ts',
+				file: 'cypress/plugins/s3-email-client/s3-utils.ts',
 				startColumn: 28,
 				startLine: 7,
 				title: '@typescript-eslint/dot-notation',
@@ -612,5 +615,54 @@ at Tests.Registration.main(Registration.java:202)`,
 		await main.run();
 		// Should not create any annotations since message is empty
 		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
+	});
+
+	describe('truncateFilePath', () => {
+		it('should return short paths unchanged', () => {
+			expect(main.truncateFilePath('src/file.ts')).toBe('src/file.ts');
+			expect(main.truncateFilePath('a/b/c/d.ts')).toBe('a/b/c/d.ts');
+		});
+
+		it('should truncate long paths to last 4 parts', () => {
+			expect(main.truncateFilePath('a/b/c/d/e/f.ts')).toBe('.../c/d/e/f.ts');
+			expect(
+				main.truncateFilePath(
+					'home/runner/work/repo/repo/src/modules/products/dto/product.dto.ts',
+				),
+			).toBe('.../modules/products/dto/product.dto.ts');
+		});
+	});
+
+	describe('generateAnnotationSection', () => {
+		it('should return empty string for no annotations', () => {
+			expect(
+				main.generateAnnotationSection('ERROR', [], 'https://example.com'),
+			).toBe('');
+		});
+
+		it('should generate section with truncated file paths', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message: 'Test error',
+					properties: {
+						file: 'src/modules/products/dto/product.dto.ts',
+						startLine: 167,
+					},
+				},
+			];
+			const baseUrl = 'https://github.com/owner/repo/pull/123/files';
+			const result = main.generateAnnotationSection(
+				'CAUTION',
+				annotations,
+				baseUrl,
+			);
+			expect(result).toContain(
+				'[.../modules/products/dto/product.dto.ts#L167]',
+			);
+			expect(result).toContain(
+				'(https://github.com/owner/repo/pull/123/files/src/modules/products/dto/product.dto.ts#L167)',
+			);
+		});
 	});
 });

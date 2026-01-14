@@ -56729,6 +56729,14 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
         coreExports.warning(`Failed to minimize previous bot comments: ${error}`);
     }
 }
+/** Truncate file path to show at most 4 directories. */
+function truncateFilePath(filePath) {
+    const parts = filePath.split('/');
+    if (parts.length <= 4) {
+        return filePath;
+    }
+    return '...' + '/' + parts.slice(-4).join('/');
+}
 /** Generate a comment section for a specific annotation level. */
 function generateAnnotationSection(levelName, annotations, baseUrl) {
     if (annotations.length === 0)
@@ -56739,9 +56747,10 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
         const message = annotation.message.replace(/@\w+/g, '`$&`');
         let line = `> ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
-            const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-            const link = `${baseUrl}/${location}`;
-            line = `> [${location}](${link}) ${message}`;
+            const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
+            const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+            const link = `${baseUrl}/${linkLocation}`;
+            line = `> [${displayLocation}](${link}) ${message}`;
         }
         section += `${line}\n`;
     }
@@ -56863,6 +56872,13 @@ async function parseXmlReport(file, matcher, allAnnotations) {
                         ? xpath.number(matcher.endColumn)
                         : undefined,
                 };
+                // Make file path relative to workspace
+                if (properties.file) {
+                    const workspace = process.env.GITHUB_WORKSPACE;
+                    if (workspace && properties.file.startsWith(workspace + '/')) {
+                        properties.file = properties.file.slice(workspace.length + 1);
+                    }
+                }
                 // Ensure annotations have a start line for proper display
                 if (!properties.startLine)
                     properties.startLine = 1;
