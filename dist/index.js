@@ -56635,6 +56635,16 @@ async function processAnnotations(allAnnotations, config) {
     const totalSkipped = skippedErrors.length + skippedWarnings.length + skippedNotices.length;
     if (totalSkipped > 0) {
         coreExports.warning(`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`);
+    }
+    // If on a PR, minimize any previous bot comments
+    if (githubExports.context.payload.pull_request) {
+        const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
+        const { owner, repo } = githubExports.context.repo;
+        const pullNumber = githubExports.context.payload.pull_request.number;
+        await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+    }
+    // Create PR comment if annotations were skipped
+    if (totalSkipped > 0) {
         await createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType);
     }
     // Set outputs for other workflow steps to use.
@@ -56654,8 +56664,6 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const { owner, repo } = githubExports.context.repo;
     const pullNumber = githubExports.context.payload.pull_request.number;
     const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-    // Minimize previous bot comments before adding a new one
-    await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
     let commentBody = '## Skipped Annotations\n\n';
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
     commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
@@ -56744,7 +56752,7 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
     const noteType = `[!${levelName}]`;
     let section = `> ${noteType}\n`;
     for (const annotation of annotations) {
-        const message = annotation.message.replace(/@\w+/g, '`$&`');
+        const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
         let line = `> ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
             const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;

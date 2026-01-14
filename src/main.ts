@@ -229,6 +229,20 @@ async function processAnnotations(
 		core.warning(
 			`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`,
 		);
+	}
+
+	// If on a PR, minimize any previous bot comments
+	if (github.context.payload.pull_request) {
+		const octokit = github.getOctokit(
+			core.getInput('token') || process.env.GITHUB_TOKEN!,
+		);
+		const { owner, repo } = github.context.repo;
+		const pullNumber = github.context.payload.pull_request.number;
+		await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+	}
+
+	// Create PR comment if annotations were skipped
+	if (totalSkipped > 0) {
 		await createSkippedAnnotationsComment(
 			skippedErrors,
 			skippedWarnings,
@@ -262,9 +276,6 @@ async function createSkippedAnnotationsComment(
 	const { owner, repo } = github.context.repo;
 	const pullNumber = github.context.payload.pull_request.number;
 	const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-
-	// Minimize previous bot comments before adding a new one
-	await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
 
 	let commentBody = '## Skipped Annotations\n\n';
 	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;

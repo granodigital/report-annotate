@@ -479,6 +479,52 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 	});
 
+	it('should minimize previous PR comments when no annotations are skipped', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123 },
+		};
+		// Use a report with few errors that won't exceed the limit
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		// Mock listComments to return some previous bot comments
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Skipped Annotations\n\nOld comment',
+				},
+				{
+					id: 2,
+					node_id: 'comment2',
+					body: 'Some other comment',
+				},
+			],
+		});
+		// Mock graphql for minimizing comments
+		mockOctokit.graphql.mockResolvedValue({});
+		await main.run();
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledWith({
+			owner: 'test-owner',
+			repo: 'test-repo',
+			issue_number: 123,
+			page: 1,
+			per_page: 100,
+		});
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{
+				input: {
+					subjectId: 'comment1',
+					classifier: 'OUTDATED',
+				},
+			},
+		);
+		// Should not create a new comment since no annotations were skipped
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
 	it('should handle pagination when fetching comments', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
