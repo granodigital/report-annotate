@@ -56635,6 +56635,16 @@ async function processAnnotations(allAnnotations, config) {
     const totalSkipped = skippedErrors.length + skippedWarnings.length + skippedNotices.length;
     if (totalSkipped > 0) {
         coreExports.warning(`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`);
+    }
+    // If on a PR, minimize any previous bot comments
+    if (githubExports.context.payload.pull_request) {
+        const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
+        const { owner, repo } = githubExports.context.repo;
+        const pullNumber = githubExports.context.payload.pull_request.number;
+        await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+    }
+    // Create PR comment if annotations were skipped
+    if (totalSkipped > 0) {
         await createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType);
     }
     // Set outputs for other workflow steps to use.
@@ -56654,11 +56664,9 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const { owner, repo } = githubExports.context.repo;
     const pullNumber = githubExports.context.payload.pull_request.number;
     const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-    // Minimize previous bot comments before adding a new one
-    await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
     let commentBody = '## Skipped Annotations\n\n';
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
-    commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
+    commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
     commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
     commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
     try {
@@ -56729,6 +56737,14 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
         coreExports.warning(`Failed to minimize previous bot comments: ${error}`);
     }
 }
+/** Truncate file path to show at most 4 directories. */
+function truncateFilePath(filePath) {
+    const parts = filePath.split('/');
+    if (parts.length <= 4) {
+        return filePath;
+    }
+    return '...' + '/' + parts.slice(-4).join('/');
+}
 /** Generate a comment section for a specific annotation level. */
 function generateAnnotationSection(levelName, annotations, baseUrl) {
     if (annotations.length === 0)
@@ -56736,12 +56752,13 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
     const noteType = `[!${levelName}]`;
     let section = `> ${noteType}\n`;
     for (const annotation of annotations) {
-        let message = annotation.message.replace(/@\w+/g, '`$&`');
+        const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
         let line = `> ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
-            const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-            const link = `${baseUrl}/${location}`;
-            line = `> [${location}](${link}) ${message}`;
+            const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
+            const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+            const link = `${baseUrl}/${linkLocation}`;
+            line = `> [${displayLocation}](${link}) ${message}`;
         }
         section += `${line}\n`;
     }
@@ -56863,6 +56880,13 @@ async function parseXmlReport(file, matcher, allAnnotations) {
                         ? xpath.number(matcher.endColumn)
                         : undefined,
                 };
+                // Make file path relative to workspace
+                if (properties.file) {
+                    const workspace = process.env.GITHUB_WORKSPACE;
+                    if (workspace && properties.file.startsWith(workspace + '/')) {
+                        properties.file = properties.file.slice(workspace.length + 1);
+                    }
+                }
                 // Ensure annotations have a start line for proper display
                 if (!properties.startLine)
                     properties.startLine = 1;

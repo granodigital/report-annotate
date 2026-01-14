@@ -1,7 +1,7 @@
 {
 	"name": "report-annotate",
 	"description": "Annotate PR from report e.g. junit",
-	"version": "3.1.1",
+	"version": "3.1.2",
 	"author": "",
 	"type": "module",
 	"private": true,

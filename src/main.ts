@@ -39,7 +39,7 @@ export interface Config {
 
 type AnnotationLevel = 'notice' | 'warning' | 'error' | 'ignore';
 
-interface PendingAnnotation {
+export interface PendingAnnotation {
 	level: AnnotationLevel;
 	message: string;
 	properties: core.AnnotationProperties;
@@ -229,6 +229,20 @@ async function processAnnotations(
 		core.warning(
 			`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`,
 		);
+	}
+
+	// If on a PR, minimize any previous bot comments
+	if (github.context.payload.pull_request) {
+		const octokit = github.getOctokit(
+			core.getInput('token') || process.env.GITHUB_TOKEN!,
+		);
+		const { owner, repo } = github.context.repo;
+		const pullNumber = github.context.payload.pull_request.number;
+		await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+	}
+
+	// Create PR comment if annotations were skipped
+	if (totalSkipped > 0) {
 		await createSkippedAnnotationsComment(
 			skippedErrors,
 			skippedWarnings,
@@ -263,13 +277,10 @@ async function createSkippedAnnotationsComment(
 	const pullNumber = github.context.payload.pull_request.number;
 	const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
 
-	// Minimize previous bot comments before adding a new one
-	await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
-
 	let commentBody = '## Skipped Annotations\n\n';
 	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
 
-	commentBody += generateAnnotationSection('ERROR', skippedErrors, baseUrl);
+	commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
 	commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
 	commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
 
@@ -359,8 +370,17 @@ async function minimizePreviousBotComments(
 	}
 }
 
+/** Truncate file path to show at most 4 directories. */
+export function truncateFilePath(filePath: string): string {
+	const parts = filePath.split('/');
+	if (parts.length <= 4) {
+		return filePath;
+	}
+	return '...' + '/' + parts.slice(-4).join('/');
+}
+
 /** Generate a comment section for a specific annotation level. */
-function generateAnnotationSection(
+export function generateAnnotationSection(
 	levelName: string,
 	annotations: PendingAnnotation[],
 	baseUrl: string,
@@ -370,12 +390,13 @@ function generateAnnotationSection(
 	const noteType = `[!${levelName}]`;
 	let section = `> ${noteType}\n`;
 	for (const annotation of annotations) {
-		const message = annotation.message.replace(/@\w+/g, '`$&`');
+		const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
 		let line = `> ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
-			const location = `${annotation.properties.file}#L${annotation.properties.startLine}`;
-			const link = `${baseUrl}/${location}`;
-			line = `> [${location}](${link}) ${message}`;
+			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
+			const linkLocation = `${annotation.properties.file}#L${annotation.properties.startLine}`;
+			const link = `${baseUrl}/${linkLocation}`;
+			line = `> [${displayLocation}](${link}) ${message}`;
 		}
 		section += `${line}\n`;
 	}
@@ -508,6 +529,14 @@ async function parseXmlReport(
 						? xpath.number(matcher.endColumn)
 						: undefined,
 				} satisfies core.AnnotationProperties;
+
+				// Make file path relative to workspace
+				if (properties.file) {
+					const workspace = process.env.GITHUB_WORKSPACE;
+					if (workspace && properties.file.startsWith(workspace + '/')) {
+						properties.file = properties.file.slice(workspace.length + 1);
+					}
+				}
 
 				// Ensure annotations have a start line for proper display
 				if (!properties.startLine) properties.startLine = 1;
