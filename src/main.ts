@@ -385,6 +385,13 @@ export function getDiffId(filePath: string): string {
 	return createHash('sha256').update(filePath).digest('hex');
 }
 
+/** Emoji indicators for annotation levels. */
+const levelEmojis: Record<string, string> = {
+	CAUTION: '❌',
+	WARNING: '⚠️',
+	NOTE: 'ℹ️',
+};
+
 /** Generate a comment section for a specific annotation level. */
 export function generateAnnotationSection(
 	levelName: string,
@@ -393,20 +400,20 @@ export function generateAnnotationSection(
 ): string {
 	if (annotations.length === 0) return '';
 
-	const noteType = `[!${levelName}]`;
-	let section = `> ${noteType}\n`;
+	const emoji = levelEmojis[levelName] ?? levelName;
+	let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
 	for (const annotation of annotations) {
 		const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
-		let line = `> ${message}`;
+		let line = `- ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
 			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
 			const diffId = getDiffId(annotation.properties.file);
 			const link = `${baseUrl}#diff-${diffId}`;
-			line = `> [${displayLocation}](${link}) ${message}`;
+			line = `- [${displayLocation}](${link}) ${message}`;
 		}
 		section += `${line}\n`;
 	}
-	section += '\n';
+	section += '\n</details>\n\n';
 	return section;
 }
 

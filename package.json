@@ -10,9 +10,6 @@
 		"type": "git",
 		"url": "git+https://github.com/granodigital/report-annotate.git"
 	},
-	"bugs": {
-		"url": "https://github.com/granodigital/report-annotate/issues"
-	},
 	"keywords": [
 		"actions",
 		"annotate",

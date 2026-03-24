@@ -714,12 +714,15 @@ at Tests.Registration.main(Registration.java:202)`,
 				annotations,
 				baseUrl,
 			);
+			expect(result).toContain('<details>');
+			expect(result).toContain('❌ CAUTION (1)');
 			expect(result).toContain(
 				'[.../modules/products/dto/product.dto.ts#L167]',
 			);
 			expect(result).toContain(
 				'(https://github.com/owner/repo/pull/123/files#diff-58d7002fa09097d6e54eec04b3ba865011f947ebb601513ede5829785248e69f)',
 			);
+			expect(result).toContain('</details>');
 		});
 
 		it('should escape @mentions in messages', () => {
