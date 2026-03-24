@@ -48,7 +48,6 @@
 		"yaml": "^2.3.4"
 	},
 	"devDependencies": {
-		"@eslint/compat": "^1.4.0",
 		"@github/local-action": "^6.0.2",
 		"@jest/globals": "^30.2.0",
 		"@rollup/plugin-commonjs": "^29.0.0",
@@ -61,8 +60,6 @@
 		"@typescript-eslint/parser": "^8.32.1",
 		"eslint": "^9.39.2",
 		"eslint-config-prettier": "^10.1.8",
-		"eslint-import-resolver-typescript": "^4.4.4",
-		"eslint-plugin-import": "^2.32.0",
 		"eslint-plugin-jest": "^29.8.0",
 		"eslint-plugin-prettier": "^5.5.4",
 		"jest": "^30.2.0",
