@@ -1,2 +1,3 @@
 [codespell]
 ignore-words-list = repot
+skip = package-lock.json
