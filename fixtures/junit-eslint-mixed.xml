@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite package="org.eslint" time="0" tests="5" errors="5"
+		name="/home/runner/work/repo-name/repo-name/src/app.ts">
+		<testcase time="0" name="org.eslint.no-unused-vars"
+			classname="/home/runner/work/repo-name/repo-name/src/app">
+			<failure message="Variable x is not used."><![CDATA[
+line 1, col 5, Error - Variable x is not used. (no-unused-vars)
+]]></failure>
+		</testcase>
+		<testcase time="0" name="org.eslint.no-undef"
+			classname="/home/runner/work/repo-name/repo-name/src/app">
+			<failure message="Variable y is not defined."><![CDATA[
+line 2, col 10, Error - Variable y is not defined. (no-undef)
+]]></failure>
+		</testcase>
+		<testcase time="0" name="org.eslint.jsdoc/require-jsdoc"
+			classname="/home/runner/work/repo-name/repo-name/src/app">
+			<failure message="Missing JSDoc comment for function foo."><![CDATA[
+line 3, col 1, Warning - Missing JSDoc comment for function foo. (jsdoc/require-jsdoc)
+]]></failure>
+		</testcase>
+		<testcase time="0" name="org.eslint.jsdoc/require-jsdoc"
+			classname="/home/runner/work/repo-name/repo-name/src/app">
+			<failure message="Missing JSDoc comment for function bar."><![CDATA[
+line 10, col 1, Warning - Missing JSDoc comment for function bar. (jsdoc/require-jsdoc)
+]]></failure>
+		</testcase>
+		<testcase time="0" name="org.eslint.jsdoc/require-jsdoc"
+			classname="/home/runner/work/repo-name/repo-name/src/app">
+			<failure message="Missing JSDoc comment for function baz."><![CDATA[
+line 20, col 1, Warning - Missing JSDoc comment for function baz. (jsdoc/require-jsdoc)
+]]></failure>
+		</testcase>
+	</testsuite>
+</testsuites>

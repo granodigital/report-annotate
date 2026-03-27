@@ -447,15 +447,38 @@ at Tests.Registration.main(Registration.java:202)`,
 				},
 			},
 		);
-		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith({
-			owner: 'test-owner',
-			repo: 'test-repo',
-			issue_number: 123,
-			body: expect.stringContaining('## Skipped Annotations'),
-		});
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain('## Skipped Annotations');
+		expect(createCommentCall.body).toContain(
+			'**Summary:** Found ❌ 3 errors, ⚠️ 0 warnings, and ℹ️ 0 notices in total.',
+		);
 		expect(infoMock).toHaveBeenCalledWith(
 			'Created PR comment with skipped annotations.',
 		);
+	});
+
+	it('should include summary with all annotation types in PR comment', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123 },
+		};
+		// Use a report with 2 errors and 3 warnings, limit to 1 per type
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint-mixed.xml'];
+		testInputs['max-annotations'] = '1';
+		// Mock listComments
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		// The summary should show total counts across all types
+		expect(createCommentCall.body).toContain(
+			'**Summary:** Found ❌ 2 errors, ⚠️ 3 warnings, and ℹ️ 0 notices in total.',
+		);
+		// The skipped sections should only list the overflow
+		expect(createCommentCall.body).toContain('❌ CAUTION (1)');
+		expect(createCommentCall.body).toContain('⚠️ WARNING (2)');
 	});
 
 	it('should handle PR comment API failure', async () => {
@@ -687,6 +710,20 @@ at Tests.Registration.main(Registration.java:202)`,
 			expect(main.getDiffId('src/modules/products/dto/product.dto.ts')).toBe(
 				'58d7002fa09097d6e54eec04b3ba865011f947ebb601513ede5829785248e69f',
 			);
+		});
+	});
+
+	describe('pluralize', () => {
+		it('should use singular form for count of 1', () => {
+			expect(main.pluralize(1, 'error')).toBe('1 error');
+			expect(main.pluralize(1, 'warning')).toBe('1 warning');
+			expect(main.pluralize(1, 'notice')).toBe('1 notice');
+		});
+
+		it('should use plural form for other counts', () => {
+			expect(main.pluralize(0, 'error')).toBe('0 errors');
+			expect(main.pluralize(2, 'warning')).toBe('2 warnings');
+			expect(main.pluralize(15, 'notice')).toBe('15 notices');
 		});
 	});
 

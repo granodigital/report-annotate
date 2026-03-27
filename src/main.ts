@@ -244,11 +244,20 @@ async function processAnnotations(
 
 	// Create PR comment if annotations were skipped
 	if (totalSkipped > 0) {
+		const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
+		const totalWarnings = allAnnotations.filter(
+			a => a.level === 'warning',
+		).length;
+		const totalNotices = allAnnotations.filter(
+			a => a.level === 'notice',
+		).length;
+
 		await createSkippedAnnotationsComment(
 			skippedErrors,
 			skippedWarnings,
 			skippedNotices,
 			maxPerType,
+			{ errors: totalErrors, warnings: totalWarnings, notices: totalNotices },
 		);
 	}
 	// Set outputs for other workflow steps to use.
@@ -264,6 +273,7 @@ async function createSkippedAnnotationsComment(
 	skippedWarnings: PendingAnnotation[],
 	skippedNotices: PendingAnnotation[],
 	maxPerType: number,
+	totalCounts: { errors: number; warnings: number; notices: number },
 ): Promise<void> {
 	// Only create comment if running on a pull request
 	if (!github.context.payload.pull_request) {
@@ -279,6 +289,7 @@ async function createSkippedAnnotationsComment(
 	const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
 
 	let commentBody = '## Skipped Annotations\n\n';
+	commentBody += `**Summary:** Found ❌ ${pluralize(totalCounts.errors, 'error')}, ⚠️ ${pluralize(totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(totalCounts.notices, 'notice')} in total.\n\n`;
 	commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
 
 	commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
@@ -383,6 +394,11 @@ export function truncateFilePath(filePath: string): string {
 /** Generate the diff ID for a file path in GitHub PR files view. */
 export function getDiffId(filePath: string): string {
 	return createHash('sha256').update(filePath).digest('hex');
+}
+
+/** Pluralize a word based on count. */
+export function pluralize(count: number, word: string): string {
+	return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 /** Emoji indicators for annotation levels. */
