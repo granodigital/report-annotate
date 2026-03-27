@@ -56669,7 +56669,7 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const pullNumber = githubExports.context.payload.pull_request.number;
     const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
     let commentBody = '## Skipped Annotations\n\n';
-    commentBody += `**Summary:** Found ${totalCounts.errors} error(s), ${totalCounts.warnings} warning(s), and ${totalCounts.notices} notice(s) in total.\n\n`;
+    commentBody += `**Summary:** Found ❌ ${pluralize(totalCounts.errors, 'error')}, ⚠️ ${pluralize(totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(totalCounts.notices, 'notice')} in total.\n\n`;
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
     commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
     commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
@@ -56753,6 +56753,10 @@ function truncateFilePath(filePath) {
 /** Generate the diff ID for a file path in GitHub PR files view. */
 function getDiffId(filePath) {
     return createHash('sha256').update(filePath).digest('hex');
+}
+/** Pluralize a word based on count. */
+function pluralize(count, word) {
+    return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 /** Emoji indicators for annotation levels. */
 const levelEmojis = {
