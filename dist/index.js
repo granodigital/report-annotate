@@ -56646,7 +56646,10 @@ async function processAnnotations(allAnnotations, config) {
     }
     // Create PR comment if annotations were skipped
     if (totalSkipped > 0) {
-        await createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType);
+        const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
+        const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
+        const totalNotices = allAnnotations.filter(a => a.level === 'notice').length;
+        await createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType, { errors: totalErrors, warnings: totalWarnings, notices: totalNotices });
     }
     // Set outputs for other workflow steps to use.
     coreExports.setOutput('errors', tally.errors);
@@ -56655,7 +56658,7 @@ async function processAnnotations(allAnnotations, config) {
     coreExports.setOutput('total', tally.total);
 }
 /** Create a PR comment with skipped annotations. */
-async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType) {
+async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType, totalCounts) {
     // Only create comment if running on a pull request
     if (!githubExports.context.payload.pull_request) {
         coreExports.info('Not running on a pull request, skipping comment creation.');
@@ -56666,6 +56669,7 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const pullNumber = githubExports.context.payload.pull_request.number;
     const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
     let commentBody = '## Skipped Annotations\n\n';
+    commentBody += `**Summary:** Found ${totalCounts.errors} error(s), ${totalCounts.warnings} warning(s), and ${totalCounts.notices} notice(s) in total.\n\n`;
     commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
     commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
     commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
