@@ -2940,15 +2940,23 @@ function requireDispatcherBase () {
 	const kOnDestroyed = Symbol('onDestroyed');
 	const kOnClosed = Symbol('onClosed');
 	const kInterceptedDispatch = Symbol('Intercepted Dispatch');
+	const kWebSocketOptions = Symbol('webSocketOptions');
 
 	class DispatcherBase extends Dispatcher {
-	  constructor () {
+	  constructor (opts) {
 	    super();
 
 	    this[kDestroyed] = false;
 	    this[kOnDestroyed] = null;
 	    this[kClosed] = false;
 	    this[kOnClosed] = [];
+	    this[kWebSocketOptions] = opts?.webSocket ?? {};
+	  }
+
+	  get webSocketOptions () {
+	    return {
+	      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024
+	    }
 	  }
 
 	  get destroyed () {
@@ -11326,9 +11334,10 @@ function requireClient () {
 	    autoSelectFamilyAttemptTimeout,
 	    // h2
 	    maxConcurrentStreams,
-	    allowH2
+	    allowH2,
+	    webSocket
 	  } = {}) {
-	    super();
+	    super({ webSocket });
 
 	    if (keepAlive !== undefined) {
 	      throw new InvalidArgumentError('unsupported keepAlive, use pipelining=0 instead')
@@ -12035,8 +12044,8 @@ function requirePoolBase () {
 	const kStats = Symbol('stats');
 
 	class PoolBase extends DispatcherBase {
-	  constructor () {
-	    super();
+	  constructor (opts) {
+	    super(opts);
 
 	    this[kQueue] = new FixedQueue();
 	    this[kClients] = [];
@@ -12255,8 +12264,6 @@ function requirePool () {
 	    allowH2,
 	    ...options
 	  } = {}) {
-	    super();
-
 	    if (connections != null && (!Number.isFinite(connections) || connections < 0)) {
 	      throw new InvalidArgumentError('invalid connections')
 	    }
@@ -12280,6 +12287,8 @@ function requirePool () {
 	        ...connect
 	      });
 	    }
+
+	    super(options);
 
 	    this[kInterceptors] = options.interceptors?.Pool && Array.isArray(options.interceptors.Pool)
 	      ? options.interceptors.Pool
@@ -12574,7 +12583,6 @@ function requireAgent () {
 
 	class Agent extends DispatcherBase {
 	  constructor ({ factory = defaultFactory, maxRedirections = 0, connect, ...options } = {}) {
-	    super();
 
 	    if (typeof factory !== 'function') {
 	      throw new InvalidArgumentError('factory must be a function.')
@@ -12587,6 +12595,8 @@ function requireAgent () {
 	    if (!Number.isInteger(maxRedirections) || maxRedirections < 0) {
 	      throw new InvalidArgumentError('maxRedirections must be a positive number')
 	    }
+
+	    super(options);
 
 	    if (connect && typeof connect !== 'function') {
 	      connect = { ...connect };
@@ -25728,40 +25738,35 @@ function requirePermessageDeflate () {
 	const kBuffer = Symbol('kBuffer');
 	const kLength = Symbol('kLength');
 
-	// Default maximum decompressed message size: 4 MB
-	const kDefaultMaxDecompressedSize = 4 * 1024 * 1024;
-
 	class PerMessageDeflate {
 	  /** @type {import('node:zlib').InflateRaw} */
 	  #inflate
 
 	  #options = {}
 
-	  /** @type {boolean} */
-	  #aborted = false
-
-	  /** @type {Function|null} */
-	  #currentCallback = null
+	  #maxPayloadSize = 0
 
 	  /**
 	   * @param {Map<string, string>} extensions
 	   */
-	  constructor (extensions) {
+	  constructor (extensions, options) {
 	    this.#options.serverNoContextTakeover = extensions.has('server_no_context_takeover');
 	    this.#options.serverMaxWindowBits = extensions.get('server_max_window_bits');
+
+	    this.#maxPayloadSize = options.maxPayloadSize;
 	  }
 
+	  /**
+	   * Decompress a compressed payload.
+	   * @param {Buffer} chunk Compressed data
+	   * @param {boolean} fin Final fragment flag
+	   * @param {Function} callback Callback function
+	   */
 	  decompress (chunk, fin, callback) {
 	    // An endpoint uses the following algorithm to decompress a message.
 	    // 1.  Append 4 octets of 0x00 0x00 0xff 0xff to the tail end of the
 	    //     payload of the message.
 	    // 2.  Decompress the resulting data using DEFLATE.
-
-	    if (this.#aborted) {
-	      callback(new MessageSizeExceededError());
-	      return
-	    }
-
 	    if (!this.#inflate) {
 	      let windowBits = Z_DEFAULT_WINDOWBITS;
 
@@ -25784,23 +25789,12 @@ function requirePermessageDeflate () {
 	      this.#inflate[kLength] = 0;
 
 	      this.#inflate.on('data', (data) => {
-	        if (this.#aborted) {
-	          return
-	        }
-
 	        this.#inflate[kLength] += data.length;
 
-	        if (this.#inflate[kLength] > kDefaultMaxDecompressedSize) {
-	          this.#aborted = true;
+	        if (this.#maxPayloadSize > 0 && this.#inflate[kLength] > this.#maxPayloadSize) {
+	          callback(new MessageSizeExceededError());
 	          this.#inflate.removeAllListeners();
-	          this.#inflate.destroy();
 	          this.#inflate = null;
-
-	          if (this.#currentCallback) {
-	            const cb = this.#currentCallback;
-	            this.#currentCallback = null;
-	            cb(new MessageSizeExceededError());
-	          }
 	          return
 	        }
 
@@ -25813,14 +25807,13 @@ function requirePermessageDeflate () {
 	      });
 	    }
 
-	    this.#currentCallback = callback;
 	    this.#inflate.write(chunk);
 	    if (fin) {
 	      this.#inflate.write(tail);
 	    }
 
 	    this.#inflate.flush(() => {
-	      if (this.#aborted || !this.#inflate) {
+	      if (!this.#inflate) {
 	        return
 	      }
 
@@ -25828,7 +25821,6 @@ function requirePermessageDeflate () {
 
 	      this.#inflate[kBuffer].length = 0;
 	      this.#inflate[kLength] = 0;
-	      this.#currentCallback = null;
 
 	      callback(null, full);
 	    });
@@ -25864,6 +25856,7 @@ function requireReceiver () {
 	const { WebsocketFrameSend } = requireFrame();
 	const { closeWebSocketConnection } = requireConnection();
 	const { PerMessageDeflate } = requirePermessageDeflate();
+	const { MessageSizeExceededError } = requireErrors();
 
 	// This code was influenced by ws released under the MIT license.
 	// Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
@@ -25872,6 +25865,7 @@ function requireReceiver () {
 
 	class ByteParser extends Writable {
 	  #buffers = []
+	  #fragmentsBytes = 0
 	  #byteOffset = 0
 	  #loop = false
 
@@ -25883,18 +25877,23 @@ function requireReceiver () {
 	  /** @type {Map<string, PerMessageDeflate>} */
 	  #extensions
 
+	  /** @type {number} */
+	  #maxPayloadSize
+
 	  /**
 	   * @param {import('./websocket').WebSocket} ws
 	   * @param {Map<string, string>|null} extensions
+	   * @param {{ maxPayloadSize?: number }} [options]
 	   */
-	  constructor (ws, extensions) {
+	  constructor (ws, extensions, options = {}) {
 	    super();
 
 	    this.ws = ws;
 	    this.#extensions = extensions == null ? new Map() : extensions;
+	    this.#maxPayloadSize = options.maxPayloadSize ?? 0;
 
 	    if (this.#extensions.has('permessage-deflate')) {
-	      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions));
+	      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions, options));
 	    }
 	  }
 
@@ -25908,6 +25907,19 @@ function requireReceiver () {
 	    this.#loop = true;
 
 	    this.run(callback);
+	  }
+
+	  #validatePayloadLength () {
+	    if (
+	      this.#maxPayloadSize > 0 &&
+	      !isControlFrame(this.#info.opcode) &&
+	      this.#info.payloadLength > this.#maxPayloadSize
+	    ) {
+	      failWebsocketConnection(this.ws, 'Payload size exceeds maximum allowed size');
+	      return false
+	    }
+
+	    return true
 	  }
 
 	  /**
@@ -25998,6 +26010,10 @@ function requireReceiver () {
 	        if (payloadLength <= 125) {
 	          this.#info.payloadLength = payloadLength;
 	          this.#state = parserStates.READ_DATA;
+
+	          if (!this.#validatePayloadLength()) {
+	            return
+	          }
 	        } else if (payloadLength === 126) {
 	          this.#state = parserStates.PAYLOADLENGTH_16;
 	        } else if (payloadLength === 127) {
@@ -26022,6 +26038,10 @@ function requireReceiver () {
 
 	        this.#info.payloadLength = buffer.readUInt16BE(0);
 	        this.#state = parserStates.READ_DATA;
+
+	        if (!this.#validatePayloadLength()) {
+	          return
+	        }
 	      } else if (this.#state === parserStates.PAYLOADLENGTH_64) {
 	        if (this.#byteOffset < 8) {
 	          return callback()
@@ -26044,6 +26064,10 @@ function requireReceiver () {
 
 	        this.#info.payloadLength = lower;
 	        this.#state = parserStates.READ_DATA;
+
+	        if (!this.#validatePayloadLength()) {
+	          return
+	        }
 	      } else if (this.#state === parserStates.READ_DATA) {
 	        if (this.#byteOffset < this.#info.payloadLength) {
 	          return callback()
@@ -26056,42 +26080,53 @@ function requireReceiver () {
 	          this.#state = parserStates.INFO;
 	        } else {
 	          if (!this.#info.compressed) {
-	            this.#fragments.push(body);
+	            this.writeFragments(body);
+
+	            if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+	              failWebsocketConnection(this.ws, new MessageSizeExceededError().message);
+	              return
+	            }
 
 	            // If the frame is not fragmented, a message has been received.
 	            // If the frame is fragmented, it will terminate with a fin bit set
 	            // and an opcode of 0 (continuation), therefore we handle that when
 	            // parsing continuation frames, not here.
 	            if (!this.#info.fragmented && this.#info.fin) {
-	              const fullMessage = Buffer.concat(this.#fragments);
-	              websocketMessageReceived(this.ws, this.#info.binaryType, fullMessage);
-	              this.#fragments.length = 0;
+	              websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments());
 	            }
 
 	            this.#state = parserStates.INFO;
 	          } else {
-	            this.#extensions.get('permessage-deflate').decompress(body, this.#info.fin, (error, data) => {
-	              if (error) {
-	                failWebsocketConnection(this.ws, error.message);
-	                return
-	              }
+	            this.#extensions.get('permessage-deflate').decompress(
+	              body,
+	              this.#info.fin,
+	              (error, data) => {
+	                if (error) {
+	                  failWebsocketConnection(this.ws, error.message);
+	                  return
+	                }
 
-	              this.#fragments.push(data);
+	                this.writeFragments(data);
 
-	              if (!this.#info.fin) {
-	                this.#state = parserStates.INFO;
+	                if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+	                  failWebsocketConnection(this.ws, new MessageSizeExceededError().message);
+	                  return
+	                }
+
+	                if (!this.#info.fin) {
+	                  this.#state = parserStates.INFO;
+	                  this.#loop = true;
+	                  this.run(callback);
+	                  return
+	                }
+
+	                websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments());
+
 	                this.#loop = true;
+	                this.#state = parserStates.INFO;
 	                this.run(callback);
-	                return
 	              }
-
-	              websocketMessageReceived(this.ws, this.#info.binaryType, Buffer.concat(this.#fragments));
-
-	              this.#loop = true;
-	              this.#state = parserStates.INFO;
-	              this.#fragments.length = 0;
-	              this.run(callback);
-	            });
+	            );
 
 	            this.#loop = false;
 	            break
@@ -26141,6 +26176,26 @@ function requireReceiver () {
 	    this.#byteOffset -= n;
 
 	    return buffer
+	  }
+
+	  writeFragments (fragment) {
+	    this.#fragmentsBytes += fragment.length;
+	    this.#fragments.push(fragment);
+	  }
+
+	  consumeFragments () {
+	    const fragments = this.#fragments;
+
+	    if (fragments.length === 1) {
+	      this.#fragmentsBytes = 0;
+	      return fragments.shift()
+	    }
+
+	    const output = Buffer.concat(fragments, this.#fragmentsBytes);
+	    this.#fragments = [];
+	    this.#fragmentsBytes = 0;
+
+	    return output
 	  }
 
 	  parseCloseBody (data) {
@@ -26828,7 +26883,11 @@ function requireWebsocket () {
 	    // once this happens, the connection is open
 	    this[kResponse] = response;
 
-	    const parser = new ByteParser(this, parsedExtensions);
+	    const maxPayloadSize = this[kController]?.dispatcher?.webSocketOptions?.maxPayloadSize;
+
+	    const parser = new ByteParser(this, parsedExtensions, {
+	      maxPayloadSize
+	    });
 	    parser.on('drain', onParserDrain);
 	    parser.on('error', onParserError.bind(this));
 
@@ -60347,6 +60406,7 @@ const DEFAULT_CONFIG = {
     ignore: ['node_modules/**', 'dist/**'],
     maxAnnotations: 10,
     customMatchers: {},
+    alwaysCommentErrors: true,
 };
 /** Built-in report matchers. */
 const builtInReportMatchers = {
@@ -60423,6 +60483,28 @@ async function parseAllReports(reportFiles, reportMatchers) {
     }
     return allAnnotations;
 }
+/** Fetch the list of files changed in the PR via the GitHub API. */
+async function getPrChangedFiles(octokit, owner, repo, pullNumber) {
+    const changedFiles = new Set();
+    let page = 1;
+    const perPage = 100;
+    while (true) {
+        const response = await octokit.rest.pulls.listFiles({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            page,
+            per_page: perPage,
+        });
+        for (const file of response.data) {
+            changedFiles.add(file.filename);
+        }
+        if (response.data.length < perPage)
+            break;
+        page++;
+    }
+    return changedFiles;
+}
 /** Process and create annotations with limits. */
 async function processAnnotations(allAnnotations, config) {
     // Sort annotations by priority: errors first, then warnings, then notices
@@ -60434,15 +60516,47 @@ async function processAnnotations(allAnnotations, config) {
         ignore: 3, // Should not appear in the array, but included for type completeness
     };
     allAnnotations.sort((a, b) => priorityOrder[a.level] - priorityOrder[b.level]);
-    // Apply the per-type annotation limits to respect GitHub Actions limits
+    // If on a PR, fetch changed files and partition annotations
+    let changedFiles = null;
+    let octokit = null;
+    let pullNumber = 0;
+    const { owner, repo } = githubExports.context.repo;
+    if (githubExports.context.payload.pull_request) {
+        octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
+        pullNumber = githubExports.context.payload.pull_request.number;
+        try {
+            changedFiles = await getPrChangedFiles(octokit, owner, repo, pullNumber);
+            coreExports.info(`Found ${changedFiles.size} changed file(s) in PR #${pullNumber}.`);
+        }
+        catch (error) {
+            coreExports.warning(`Failed to fetch PR changed files: ${error}`);
+        }
+    }
+    // Partition annotations into in-diff and out-of-diff
+    const inDiffAnnotations = [];
+    const outOfDiffAnnotations = [];
+    for (const annotation of allAnnotations) {
+        if (changedFiles &&
+            annotation.properties.file &&
+            !changedFiles.has(annotation.properties.file)) {
+            outOfDiffAnnotations.push(annotation);
+        }
+        else {
+            inDiffAnnotations.push(annotation);
+        }
+    }
+    if (outOfDiffAnnotations.length > 0) {
+        coreExports.info(`${outOfDiffAnnotations.length} annotation(s) target files outside the PR diff.`);
+    }
+    // Apply the per-type annotation limits to in-diff annotations only
     const maxPerType = config.maxAnnotations;
-    const errors = allAnnotations
+    const errors = inDiffAnnotations
         .filter(a => a.level === 'error')
         .slice(0, maxPerType);
-    const warnings = allAnnotations
+    const warnings = inDiffAnnotations
         .filter(a => a.level === 'warning')
         .slice(0, maxPerType);
-    const notices = allAnnotations
+    const notices = inDiffAnnotations
         .filter(a => a.level === 'notice')
         .slice(0, maxPerType);
     const annotationsToCreate = [...errors, ...warnings, ...notices];
@@ -60458,14 +60572,14 @@ async function processAnnotations(allAnnotations, config) {
             tally.notices++;
         tally.total++;
     }
-    // Collect skipped annotations
-    const skippedErrors = allAnnotations
+    // Collect skipped in-diff annotations (over limit)
+    const skippedErrors = inDiffAnnotations
         .filter(a => a.level === 'error')
         .slice(maxPerType);
-    const skippedWarnings = allAnnotations
+    const skippedWarnings = inDiffAnnotations
         .filter(a => a.level === 'warning')
         .slice(maxPerType);
-    const skippedNotices = allAnnotations
+    const skippedNotices = inDiffAnnotations
         .filter(a => a.level === 'notice')
         .slice(maxPerType);
     // Warn if any annotations were skipped due to per-type limits
@@ -60474,18 +60588,32 @@ async function processAnnotations(allAnnotations, config) {
         coreExports.warning(`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`);
     }
     // If on a PR, minimize any previous bot comments
-    if (githubExports.context.payload.pull_request) {
-        const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
-        const { owner, repo } = githubExports.context.repo;
-        const pullNumber = githubExports.context.payload.pull_request.number;
+    if (octokit && pullNumber) {
         await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
     }
-    // Create PR comment if annotations were skipped
-    if (totalSkipped > 0) {
+    // Determine if we need a PR comment
+    const allErrors = allAnnotations.filter(a => a.level === 'error');
+    const hasErrors = allErrors.length > 0 && config.alwaysCommentErrors;
+    const hasOutOfDiff = outOfDiffAnnotations.length > 0;
+    const hasSkipped = totalSkipped > 0;
+    const needsComment = hasErrors || hasOutOfDiff || hasSkipped;
+    if (needsComment) {
         const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
         const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
         const totalNotices = allAnnotations.filter(a => a.level === 'notice').length;
-        await createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType, { errors: totalErrors, warnings: totalWarnings, notices: totalNotices });
+        await createSummaryComment({
+            allErrors: config.alwaysCommentErrors ? allErrors : [],
+            skippedErrors,
+            skippedWarnings,
+            skippedNotices,
+            outOfDiffAnnotations,
+            maxPerType,
+            totalCounts: {
+                errors: totalErrors,
+                warnings: totalWarnings,
+                notices: totalNotices,
+            },
+        });
     }
     // Set outputs for other workflow steps to use.
     coreExports.setOutput('errors', tally.errors);
@@ -60493,8 +60621,10 @@ async function processAnnotations(allAnnotations, config) {
     coreExports.setOutput('notices', tally.notices);
     coreExports.setOutput('total', tally.total);
 }
-/** Create a PR comment with skipped annotations. */
-async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, skippedNotices, maxPerType, totalCounts) {
+/** The comment header used to identify bot comments for minimization. */
+const COMMENT_HEADER = '## Report Annotations';
+/** Create a PR comment summarizing errors, out-of-diff, and skipped annotations. */
+async function createSummaryComment(params) {
     // Only create comment if running on a pull request
     if (!githubExports.context.payload.pull_request) {
         coreExports.info('Not running on a pull request, skipping comment creation.');
@@ -60503,13 +60633,37 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
     const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
     const { owner, repo } = githubExports.context.repo;
     const pullNumber = githubExports.context.payload.pull_request.number;
-    const baseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-    let commentBody = '## Skipped Annotations\n\n';
-    commentBody += `**Summary:** Found ❌ ${pluralize(totalCounts.errors, 'error')}, ⚠️ ${pluralize(totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(totalCounts.notices, 'notice')} in total.\n\n`;
-    commentBody += `The maximum number of annotations per type (${maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
-    commentBody += generateAnnotationSection('CAUTION', skippedErrors, baseUrl);
-    commentBody += generateAnnotationSection('WARNING', skippedWarnings, baseUrl);
-    commentBody += generateAnnotationSection('NOTE', skippedNotices, baseUrl);
+    const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
+    const sha = githubExports.context.payload.pull_request.head?.sha ?? 'HEAD';
+    const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
+    let commentBody = `${COMMENT_HEADER}\n\n`;
+    commentBody += `**Summary:** Found ❌ ${pluralize(params.totalCounts.errors, 'error')}, ⚠️ ${pluralize(params.totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(params.totalCounts.notices, 'notice')} in total.\n\n`;
+    // Section: All errors (always shown when alwaysCommentErrors is enabled)
+    if (params.allErrors.length > 0) {
+        commentBody += generateAnnotationSection('CAUTION', params.allErrors, diffBaseUrl);
+    }
+    // Section: Out-of-diff annotations
+    if (params.outOfDiffAnnotations.length > 0) {
+        const outOfDiffErrors = params.outOfDiffAnnotations.filter(a => a.level === 'error');
+        const outOfDiffWarnings = params.outOfDiffAnnotations.filter(a => a.level === 'warning');
+        const outOfDiffNotices = params.outOfDiffAnnotations.filter(a => a.level === 'notice');
+        commentBody += `### Annotations Outside PR Diff\n\n`;
+        commentBody += `The following annotations target files not included in this PR's changes:\n\n`;
+        commentBody += generateBlobAnnotationSection('CAUTION', outOfDiffErrors, blobBaseUrl);
+        commentBody += generateBlobAnnotationSection('WARNING', outOfDiffWarnings, blobBaseUrl);
+        commentBody += generateBlobAnnotationSection('NOTE', outOfDiffNotices, blobBaseUrl);
+    }
+    // Section: Skipped annotations (over limit)
+    const totalSkipped = params.skippedErrors.length +
+        params.skippedWarnings.length +
+        params.skippedNotices.length;
+    if (totalSkipped > 0) {
+        commentBody += `### Skipped Annotations\n\n`;
+        commentBody += `The maximum number of annotations per type (${params.maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
+        commentBody += generateAnnotationSection('CAUTION', params.skippedErrors, diffBaseUrl);
+        commentBody += generateAnnotationSection('WARNING', params.skippedWarnings, diffBaseUrl);
+        commentBody += generateAnnotationSection('NOTE', params.skippedNotices, diffBaseUrl);
+    }
     try {
         await octokit.rest.issues.createComment({
             owner,
@@ -60517,7 +60671,7 @@ async function createSkippedAnnotationsComment(skippedErrors, skippedWarnings, s
             issue_number: pullNumber,
             body: commentBody,
         });
-        coreExports.info('Created PR comment with skipped annotations.');
+        coreExports.info('Created PR comment with annotation summary.');
     }
     catch (error) {
         coreExports.error(`Failed to create PR comment: ${error}`);
@@ -60544,7 +60698,8 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
             page++;
         }
         // Filter for bot comments (comments created by this action)
-        const botComments = allComments.filter(comment => comment.body?.startsWith('## Skipped Annotations'));
+        const botComments = allComments.filter(comment => comment.body?.startsWith(COMMENT_HEADER) ||
+            comment.body?.startsWith('## Skipped Annotations'));
         if (botComments.length === 0) {
             coreExports.debug('No previous bot comments to minimize.');
             return;
@@ -60620,6 +60775,29 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
     section += '\n</details>\n\n';
     return section;
 }
+/** Generate a comment section linking to blob view for out-of-diff annotations. */
+function generateBlobAnnotationSection(levelName, annotations, blobBaseUrl) {
+    if (annotations.length === 0)
+        return '';
+    const emoji = levelEmojis[levelName] ?? levelName;
+    let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
+    for (const annotation of annotations) {
+        const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
+        let line = `- ${message}`;
+        if (annotation.properties.file) {
+            const displayLocation = annotation.properties.startLine
+                ? `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`
+                : truncateFilePath(annotation.properties.file);
+            const link = annotation.properties.startLine
+                ? `${blobBaseUrl}/${annotation.properties.file}#L${annotation.properties.startLine}`
+                : `${blobBaseUrl}/${annotation.properties.file}`;
+            line = `- [${displayLocation}](${link}) ${message}`;
+        }
+        section += `${line}\n`;
+    }
+    section += '\n</details>\n\n';
+    return section;
+}
 /** Find files using the given glob patterns. */
 async function globFiles(patterns, ignore) {
     const reportFiles = new Set();
@@ -60660,6 +60838,10 @@ async function loadConfig() {
         coreExports.error(`Failed to parse custom-matchers input: ${error}`);
         throw error;
     }
+    const alwaysCommentErrorsInput = coreExports.getInput('always-comment-errors');
+    const alwaysCommentErrors = alwaysCommentErrorsInput != null && alwaysCommentErrorsInput !== ''
+        ? alwaysCommentErrorsInput !== 'false'
+        : undefined;
     const inputs = {
         reports: coreExports.getMultilineInput('reports'),
         ignore: coreExports.getMultilineInput('ignore'),
@@ -60667,6 +60849,7 @@ async function loadConfig() {
             ? parseInt(coreExports.getInput('max-annotations'))
             : undefined,
         customMatchers,
+        alwaysCommentErrors,
     };
     coreExports.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
     const yamlConfig = await loadYamlConfig();
@@ -60674,7 +60857,7 @@ async function loadConfig() {
     // Merge the inputs with the Yaml config and default config without overriding the defaults.
     const config = Object.fromEntries(Object.entries(DEFAULT_CONFIG).map(([key, value]) => [
         key,
-        inputs[key] || yamlConfig[key] || value,
+        inputs[key] ?? yamlConfig[key] ?? value,
     ]));
     coreExports.debug(`Final config: ${JSON.stringify(config, null, 2)}`);
     return config;

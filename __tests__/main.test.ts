@@ -86,6 +86,9 @@ let mockOctokit: {
 			createComment: jest.Mock<any>;
 			listComments: jest.Mock<any>;
 		};
+		pulls: {
+			listFiles: jest.Mock<any>;
+		};
 	};
 	graphql: jest.Mock<any>;
 };
@@ -145,6 +148,9 @@ describe('action', () => {
 				issues: {
 					createComment: jest.fn(),
 					listComments: jest.fn(),
+				},
+				pulls: {
+					listFiles: jest.fn().mockResolvedValue({ data: [] }),
 				},
 			},
 			graphql: jest.fn(),
@@ -408,17 +414,21 @@ at Tests.Registration.main(Registration.java:202)`,
 	it('should create PR comment when annotations are skipped', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listFiles to return all files as changed (in-diff)
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments to return some previous bot comments
 		mockOctokit.rest.issues.listComments.mockResolvedValue({
 			data: [
 				{
 					id: 1,
 					node_id: 'comment1',
-					body: '## Skipped Annotations\n\nOld comment',
+					body: '## Report Annotations\n\nOld comment',
 				},
 				{
 					id: 2,
@@ -449,23 +459,27 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 		const createCommentCall =
 			mockOctokit.rest.issues.createComment.mock.calls[0][0];
-		expect(createCommentCall.body).toContain('## Skipped Annotations');
+		expect(createCommentCall.body).toContain('## Report Annotations');
 		expect(createCommentCall.body).toContain(
 			'**Summary:** Found ❌ 3 errors, ⚠️ 0 warnings, and ℹ️ 0 notices in total.',
 		);
 		expect(infoMock).toHaveBeenCalledWith(
-			'Created PR comment with skipped annotations.',
+			'Created PR comment with annotation summary.',
 		);
 	});
 
 	it('should include summary with all annotation types in PR comment', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		// Use a report with 2 errors and 3 warnings, limit to 1 per type
 		testInputs.reports = ['junit-eslint|fixtures/junit-eslint-mixed.xml'];
 		testInputs['max-annotations'] = '1';
+		// Mock listFiles to return file as changed (in-diff)
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'src/app.ts' }],
+		});
 		// Mock listComments
 		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
 		mockOctokit.rest.issues.createComment.mockResolvedValue({});
@@ -477,17 +491,21 @@ at Tests.Registration.main(Registration.java:202)`,
 			'**Summary:** Found ❌ 2 errors, ⚠️ 3 warnings, and ℹ️ 0 notices in total.',
 		);
 		// The skipped sections should only list the overflow
-		expect(createCommentCall.body).toContain('❌ CAUTION (1)');
+		expect(createCommentCall.body).toContain('### Skipped Annotations');
 		expect(createCommentCall.body).toContain('⚠️ WARNING (2)');
 	});
 
 	it('should handle PR comment API failure', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listFiles
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments
 		mockOctokit.rest.issues.listComments.mockResolvedValue({
 			data: [],
@@ -505,18 +523,24 @@ at Tests.Registration.main(Registration.java:202)`,
 	it('should minimize previous PR comments when no annotations are skipped', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		// Use a report with few errors that won't exceed the limit
 		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
 		testInputs['max-annotations'] = '10';
+		// Disable always-comment-errors to test minimization without new comment
+		testInputs['always-comment-errors'] = 'false';
+		// Mock listFiles to return all files as changed
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments to return some previous bot comments
 		mockOctokit.rest.issues.listComments.mockResolvedValue({
 			data: [
 				{
 					id: 1,
 					node_id: 'comment1',
-					body: '## Skipped Annotations\n\nOld comment',
+					body: '## Report Annotations\n\nOld comment',
 				},
 				{
 					id: 2,
@@ -544,17 +568,21 @@ at Tests.Registration.main(Registration.java:202)`,
 				},
 			},
 		);
-		// Should not create a new comment since no annotations were skipped
+		// Should not create a new comment since no annotations were skipped and alwaysCommentErrors is false
 		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
 	});
 
 	it('should handle pagination when fetching comments', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listFiles
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments to return full page on first call, then empty page
 		mockOctokit.rest.issues.listComments
 			.mockResolvedValueOnce({
@@ -563,7 +591,7 @@ at Tests.Registration.main(Registration.java:202)`,
 					.map((_, i) => ({
 						id: i + 1,
 						node_id: `comment${i + 1}`,
-						body: '## Skipped Annotations\n\nOld comment',
+						body: '## Report Annotations\n\nOld comment',
 					})),
 			})
 			.mockResolvedValueOnce({
@@ -594,17 +622,21 @@ at Tests.Registration.main(Registration.java:202)`,
 	it('should handle GraphQL minimization failure for individual comments', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listFiles
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments to return bot comments
 		mockOctokit.rest.issues.listComments.mockResolvedValue({
 			data: [
 				{
 					id: 1,
 					node_id: 'comment1',
-					body: '## Skipped Annotations\n\nOld comment',
+					body: '## Report Annotations\n\nOld comment',
 				},
 			],
 		});
@@ -622,10 +654,14 @@ at Tests.Registration.main(Registration.java:202)`,
 	it('should handle listComments API failure', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
-			pull_request: { number: 123 },
+			pull_request: { number: 123, head: { sha: 'abc123' } },
 		};
 		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
 		testInputs['max-annotations'] = '2';
+		// Mock listFiles
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
 		// Mock listComments to fail
 		const apiError = new Error('API Error');
 		mockOctokit.rest.issues.listComments.mockRejectedValue(apiError);
@@ -799,5 +835,204 @@ at Tests.Registration.main(Registration.java:202)`,
 				'Avoid using `@Output()` decorators. Use OutputSignals (e.g. via output()) instead.',
 			);
 		});
+	});
+
+	describe('generateBlobAnnotationSection', () => {
+		it('should return empty string for no annotations', () => {
+			expect(
+				main.generateBlobAnnotationSection(
+					'ERROR',
+					[],
+					'https://example.com/blob/abc',
+				),
+			).toBe('');
+		});
+
+		it('should generate section with blob links', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message: 'Test error',
+					properties: {
+						file: 'src/modules/products/dto/product.dto.ts',
+						startLine: 167,
+					},
+				},
+			];
+			const blobBaseUrl = 'https://github.com/owner/repo/blob/abc123';
+			const result = main.generateBlobAnnotationSection(
+				'CAUTION',
+				annotations,
+				blobBaseUrl,
+			);
+			expect(result).toContain('<details>');
+			expect(result).toContain('❌ CAUTION (1)');
+			expect(result).toContain(
+				'[.../modules/products/dto/product.dto.ts#L167]',
+			);
+			expect(result).toContain(
+				'(https://github.com/owner/repo/blob/abc123/src/modules/products/dto/product.dto.ts#L167)',
+			);
+			expect(result).toContain('</details>');
+		});
+
+		it('should handle annotations without startLine', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'warning',
+					message: 'Some warning',
+					properties: {
+						file: 'src/file.ts',
+					},
+				},
+			];
+			const result = main.generateBlobAnnotationSection(
+				'WARNING',
+				annotations,
+				'https://github.com/owner/repo/blob/abc123',
+			);
+			expect(result).toContain('[src/file.ts]');
+			expect(result).toContain(
+				'(https://github.com/owner/repo/blob/abc123/src/file.ts)',
+			);
+			// Should not contain line number reference
+			expect(result).not.toContain('#L');
+		});
+	});
+
+	it('should always create PR comment with errors when alwaysCommentErrors is true', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		testInputs['max-annotations'] = '10'; // No skipping
+		// Mock listFiles to return all files as changed
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'cypress/plugins/s3-email-client/s3-utils.ts' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		// Should create a comment because there are errors and alwaysCommentErrors defaults to true
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain('## Report Annotations');
+		expect(createCommentCall.body).toContain('❌ CAUTION (1)');
+	});
+
+	it('should not create PR comment when alwaysCommentErrors is false and no skipped', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		// Mock listFiles to return all annotation files as changed (in-diff)
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'cypress/plugins/s3-email-client/s3-utils.ts' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		await main.run();
+		// Should NOT create a comment because alwaysCommentErrors is false, all files in diff, and nothing was skipped
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
+	it('should include out-of-diff annotations in PR comment', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		// Mock listFiles to return NO changed files - all annotations are out-of-diff
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		// Out-of-diff annotations should not be emitted as GitHub annotations
+		expect(errorMock).not.toHaveBeenCalledWith(
+			'["Bucket"] is better written in dot notation.',
+			expect.any(Object),
+		);
+		// Should create a comment with out-of-diff section
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain('### Annotations Outside PR Diff');
+		expect(createCommentCall.body).toContain(
+			'https://github.com/test-owner/test-repo/blob/abc123/',
+		);
+		// Outputs should reflect 0 since out-of-diff annotations are not emitted
+		expect(setOutputMock).toHaveBeenCalledWith('errors', 0);
+		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
+	});
+
+	it('should handle getPrChangedFiles API failure gracefully', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		// Mock listFiles to fail
+		mockOctokit.rest.pulls.listFiles.mockRejectedValue(
+			new Error('API failure'),
+		);
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		// Should fall back to treating all as in-diff
+		expect(warningMock).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to fetch PR changed files'),
+		);
+		// Annotations should still be created as normal
+		expect(errorMock).toHaveBeenCalledWith(
+			'["Bucket"] is better written in dot notation.',
+			expect.any(Object),
+		);
+	});
+
+	it('should also minimize old-format Skipped Annotations comments', async () => {
+		// Mock GitHub context to be on a PR
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		// Mock listFiles
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'cypress/plugins/s3-email-client/s3-utils.ts' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Skipped Annotations\n\nOld format comment',
+				},
+				{
+					id: 2,
+					node_id: 'comment2',
+					body: '## Report Annotations\n\nNew format comment',
+				},
+			],
+		});
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		// Both old and new format comments should be minimized
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(2);
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{ input: { subjectId: 'comment1', classifier: 'OUTDATED' } },
+		);
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{ input: { subjectId: 'comment2', classifier: 'OUTDATED' } },
+		);
 	});
 });

@@ -45,19 +45,38 @@ steps:
 
 ## Inputs
 
-| Name              | Description                                                                                                                    | Default                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                      | `["junit\|junit/*.xml"]`         |
-| `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                         | `['node_modules/**', 'dist/**']` |
-| `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                  | `10`                             |
-| `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples |                                  |
-| `token`           | GitHub token for creating PR comments when annotations are skipped                                                             | `${{ github.token }}`            |
+| Name                    | Description                                                                                                                    | Default                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `reports`               | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                      | `["junit\|junit/*.xml"]`         |
+| `ignore`                | Ignore files from report search: `"[glob1, glob2...]"`                                                                         | `['node_modules/**', 'dist/**']` |
+| `max-annotations`       | Maximum number of annotations per type (error/warning/notice)                                                                  | `10`                             |
+| `custom-matchers`       | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples |                                  |
+| `always-comment-errors` | When true, all errors are always included in the PR comment body regardless of annotation limits or diff membership            | `true`                           |
+| `token`                 | GitHub token for creating PR comments when annotations are skipped                                                             | `${{ github.token }}`            |
 
 ## Skipped Annotations
 
 When the maximum number of annotations per type is reached, additional
 annotations are not displayed as GitHub annotations to avoid clutter. Instead,
 they are added as a comment on the pull request.
+
+## PR Comment Summary
+
+A PR comment is automatically created when any of the following conditions are
+met:
+
+- **Errors exist** (when `always-comment-errors` is `true`, the default): All
+  errors are listed in the comment so they are visible without opening the
+  Changes tab.
+- **Out-of-diff annotations**: When lint/tests run on all files (e.g., after
+  ESLint config changes), annotations on files not included in the PR diff won't
+  display as inline annotations. These are automatically detected and included
+  in the PR comment with links to the blob view.
+- **Skipped annotations**: When the `max-annotations` limit is exceeded,
+  additional annotations are listed in the comment.
+
+Previous bot comments from this action are automatically minimized when a new
+comment is created.
 
 <!-- prettier-ignore -->
 > [!NOTE]
