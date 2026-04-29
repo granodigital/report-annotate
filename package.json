@@ -1,7 +1,7 @@
 {
 	"name": "report-annotate",
 	"description": "Annotate PR from report e.g. junit",
-	"version": "3.3.0",
+	"version": "3.3.1",
 	"author": "",
 	"type": "module",
 	"private": true,
@@ -39,44 +39,39 @@
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@actions/core": "^1.11.1",
-		"@actions/github": "^6.0.0",
-		"@types/glob": "^8.1.0",
-		"@xmldom/xmldom": "^0.8.13",
-		"glob": "^10.5.0",
+		"@actions/core": "^3.0.1",
+		"@actions/github": "^9.1.1",
+		"@xmldom/xmldom": "^0.9.10",
+		"glob": "^13.0.6",
 		"xpath": "^0.0.34",
 		"yaml": "^2.8.3"
 	},
 	"devDependencies": {
-		"@github/local-action": "^6.0.2",
-		"@jest/globals": "^30.2.0",
-		"@rollup/plugin-commonjs": "^29.0.0",
+		"@github/local-action": "^7.0.1",
+		"@jest/globals": "^30.3.0",
+		"@rollup/plugin-commonjs": "^29.0.2",
 		"@rollup/plugin-node-resolve": "^16.0.3",
 		"@rollup/plugin-typescript": "^12.3.0",
 		"@types/jest": "^30.0.0",
-		"@types/node": "^24.10.1",
-		"@types/yaml": "^1.9.7",
-		"@typescript-eslint/eslint-plugin": "^8.50.0",
-		"@typescript-eslint/parser": "^8.32.1",
-		"eslint": "^9.39.2",
+		"@types/node": "^25.6.0",
+		"@typescript-eslint/eslint-plugin": "^8.59.1",
+		"@typescript-eslint/parser": "^8.59.1",
+		"eslint": "^10.2.1",
 		"eslint-config-prettier": "^10.1.8",
-		"eslint-plugin-jest": "^29.8.0",
-		"eslint-plugin-prettier": "^5.5.4",
-		"jest": "^30.2.0",
+		"eslint-plugin-jest": "^29.15.2",
+		"eslint-plugin-prettier": "^5.5.5",
+		"jest": "^30.3.0",
 		"make-coverage-badge": "^1.2.0",
-		"prettier": "^3.7.4",
-		"prettier-eslint": "^16.4.2",
-		"rollup": "^4.54.0",
-		"ts-jest": "^29.4.6",
+		"prettier": "^3.8.3",
+		"rollup": "^4.60.2",
+		"ts-jest": "^29.4.9",
 		"ts-jest-resolver": "^2.0.1",
-		"typescript": "^5.9.3"
+		"typescript": "^6.0.3"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "*"
 	},
 	"overrides": {
-		"undici": "^7.24.0",
-		"brace-expansion@2": "~2.0.3",
-		"uuid": "^14.0.0"
+		"undici": "^6.25.0"
 	}
 }
