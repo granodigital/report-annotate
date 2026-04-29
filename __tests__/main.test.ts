@@ -125,6 +125,7 @@ describe('action', () => {
 		const getInputMock = jest.fn((...args: unknown[]) => {
 			const name = String(args[0]);
 			const value = inputValue(name);
+			if (value == null) return '';
 			// For getInput always coerce arrays to first element
 			return Array.isArray(value) ? value[0] : (value as string);
 		});
@@ -979,6 +980,47 @@ at Tests.Registration.main(Registration.java:202)`,
 		expect(createCommentCall.body).toContain('## Report Annotations');
 		expect(createCommentCall.body).toContain('❌ CAUTION (1)');
 	});
+
+	it.each(['true', 'True', 'TRUE'])(
+		'should parse always-comment-errors=%s as true',
+		async value => {
+			(github.context as MutableContext).payload = {
+				pull_request: { number: 123, head: { sha: 'abc123' } },
+			};
+			testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+			testInputs['max-annotations'] = '10';
+			testInputs['always-comment-errors'] = value;
+			mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+				data: [{ filename: 'cypress/plugins/s3-email-client/s3-utils.ts' }],
+			});
+			mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+			mockOctokit.rest.issues.createComment.mockResolvedValue({});
+
+			await main.run();
+
+			expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+		},
+	);
+
+	it.each(['false', 'False', 'FALSE'])(
+		'should parse always-comment-errors=%s as false',
+		async value => {
+			(github.context as MutableContext).payload = {
+				pull_request: { number: 123, head: { sha: 'abc123' } },
+			};
+			testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+			testInputs['max-annotations'] = '10';
+			testInputs['always-comment-errors'] = value;
+			mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+				data: [{ filename: 'cypress/plugins/s3-email-client/s3-utils.ts' }],
+			});
+			mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+
+			await main.run();
+
+			expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+		},
+	);
 
 	it('should not create PR comment when alwaysCommentErrors is false and no skipped', async () => {
 		// Mock GitHub context to be on a PR

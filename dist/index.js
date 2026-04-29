@@ -60873,7 +60873,7 @@ async function processAnnotations(allAnnotations, config) {
     }
     // Determine if we need a PR comment
     const allErrors = allAnnotations.filter(a => a.level === 'error');
-    const inDiffErrors = inDiffAnnotations.filter(a => a.level === 'error');
+    const inDiffOnlyErrors = inDiffAnnotations.filter(a => a.level === 'error');
     const hasErrors = allErrors.length > 0;
     const hasOutOfDiff = outOfDiffAnnotations.length > 0;
     const hasSkipped = totalSkipped > 0;
@@ -60888,7 +60888,7 @@ async function processAnnotations(allAnnotations, config) {
         const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
         const totalNotices = allAnnotations.filter(a => a.level === 'notice').length;
         await createSummaryComment({
-            allErrors: config.alwaysCommentErrors ? inDiffErrors : [],
+            allErrors: config.alwaysCommentErrors ? inDiffOnlyErrors : [],
             skippedErrors,
             skippedWarnings,
             skippedNotices,
@@ -61210,7 +61210,7 @@ async function loadConfig() {
         coreExports.error(`Failed to parse custom-matchers input: ${error}`);
         throw error;
     }
-    const alwaysCommentErrorsInput = coreExports.getInput('always-comment-errors') || '';
+    const alwaysCommentErrorsInput = coreExports.getInput('always-comment-errors');
     const alwaysCommentErrors = alwaysCommentErrorsInput.trim() !== ''
         ? coreExports.getBooleanInput('always-comment-errors')
         : undefined;
