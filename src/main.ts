@@ -310,13 +310,9 @@ async function processAnnotations(
 		);
 	}
 
-	// If on a PR, minimize any previous bot comments (when using 'minimize' method)
-	if (octokit && pullNumber && config.commentMethod === 'minimize') {
-		await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
-	}
-
 	// Determine if we need a PR comment
 	const allErrors = allAnnotations.filter(a => a.level === 'error');
+	const inDiffErrors = inDiffAnnotations.filter(a => a.level === 'error');
 	const hasErrors = allErrors.length > 0;
 	const hasOutOfDiff = outOfDiffAnnotations.length > 0;
 	const hasSkipped = totalSkipped > 0;
@@ -324,6 +320,12 @@ async function processAnnotations(
 		(hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
 
 	if (needsComment) {
+		// If on a PR, minimize previous bot comments only when a replacement
+		// comment will be created.
+		if (octokit && pullNumber && config.commentMethod === 'minimize') {
+			await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+		}
+
 		const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
 		const totalWarnings = allAnnotations.filter(
 			a => a.level === 'warning',
@@ -333,7 +335,7 @@ async function processAnnotations(
 		).length;
 
 		await createSummaryComment({
-			allErrors: config.alwaysCommentErrors ? allErrors : [],
+			allErrors: config.alwaysCommentErrors ? inDiffErrors : [],
 			skippedErrors,
 			skippedWarnings,
 			skippedNotices,
@@ -392,7 +394,8 @@ async function createSummaryComment(
 		github.getOctokit(core.getInput('token') || process.env.GITHUB_TOKEN!);
 	const { owner, repo, pullNumber } = params;
 	const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-	const sha = github.context.payload.pull_request.head?.sha ?? 'HEAD';
+	const sha =
+		github.context.payload.pull_request.head?.sha ?? github.context.sha;
 	const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
 
 	let commentBody = `${COMMENT_HEADER}\n\n`;
@@ -779,19 +782,21 @@ async function loadConfig(): Promise<Config> {
 		core.error(`Failed to parse custom-matchers input: ${error}`);
 		throw error;
 	}
-	const alwaysCommentErrorsInput = core.getInput('always-comment-errors');
+	const alwaysCommentErrorsInput = core.getInput('always-comment-errors') || '';
 	const alwaysCommentErrors =
-		alwaysCommentErrorsInput != null && alwaysCommentErrorsInput !== ''
-			? alwaysCommentErrorsInput !== 'false'
+		alwaysCommentErrorsInput.trim() !== ''
+			? core.getBooleanInput('always-comment-errors')
 			: undefined;
 	const commentMethodInput = core.getInput('comment-method');
 	const commentMethod: CommentMethod | undefined =
 		commentMethodInput === 'minimize' || commentMethodInput === 'update'
 			? commentMethodInput
 			: undefined;
+	const reports = core.getMultilineInput('reports');
+	const ignore = core.getMultilineInput('ignore');
 	const inputs: Partial<Config> = {
-		reports: core.getMultilineInput('reports'),
-		ignore: core.getMultilineInput('ignore'),
+		reports: reports.length > 0 ? reports : undefined,
+		ignore: ignore.length > 0 ? ignore : undefined,
 		maxAnnotations: core.getInput('max-annotations')
 			? parseInt(core.getInput('max-annotations'))
 			: undefined,

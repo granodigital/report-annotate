@@ -60871,22 +60871,24 @@ async function processAnnotations(allAnnotations, config) {
     if (totalSkipped > 0) {
         coreExports.warning(`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`);
     }
-    // If on a PR, minimize any previous bot comments (when using 'minimize' method)
-    if (octokit && pullNumber && config.commentMethod === 'minimize') {
-        await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
-    }
     // Determine if we need a PR comment
     const allErrors = allAnnotations.filter(a => a.level === 'error');
+    const inDiffErrors = inDiffAnnotations.filter(a => a.level === 'error');
     const hasErrors = allErrors.length > 0;
     const hasOutOfDiff = outOfDiffAnnotations.length > 0;
     const hasSkipped = totalSkipped > 0;
     const needsComment = (hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
     if (needsComment) {
+        // If on a PR, minimize previous bot comments only when a replacement
+        // comment will be created.
+        if (octokit && pullNumber && config.commentMethod === 'minimize') {
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+        }
         const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
         const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
         const totalNotices = allAnnotations.filter(a => a.level === 'notice').length;
         await createSummaryComment({
-            allErrors: config.alwaysCommentErrors ? allErrors : [],
+            allErrors: config.alwaysCommentErrors ? inDiffErrors : [],
             skippedErrors,
             skippedWarnings,
             skippedNotices,
@@ -60923,7 +60925,7 @@ async function createSummaryComment(params) {
         githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
     const { owner, repo, pullNumber } = params;
     const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
-    const sha = githubExports.context.payload.pull_request.head?.sha ?? 'HEAD';
+    const sha = githubExports.context.payload.pull_request.head?.sha ?? githubExports.context.sha;
     const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
     let commentBody = `${COMMENT_HEADER}\n\n`;
     // Build summary line, omitting types with 0 count
@@ -61208,17 +61210,19 @@ async function loadConfig() {
         coreExports.error(`Failed to parse custom-matchers input: ${error}`);
         throw error;
     }
-    const alwaysCommentErrorsInput = coreExports.getInput('always-comment-errors');
-    const alwaysCommentErrors = alwaysCommentErrorsInput != null && alwaysCommentErrorsInput !== ''
-        ? alwaysCommentErrorsInput !== 'false'
+    const alwaysCommentErrorsInput = coreExports.getInput('always-comment-errors') || '';
+    const alwaysCommentErrors = alwaysCommentErrorsInput.trim() !== ''
+        ? coreExports.getBooleanInput('always-comment-errors')
         : undefined;
     const commentMethodInput = coreExports.getInput('comment-method');
     const commentMethod = commentMethodInput === 'minimize' || commentMethodInput === 'update'
         ? commentMethodInput
         : undefined;
+    const reports = coreExports.getMultilineInput('reports');
+    const ignore = coreExports.getMultilineInput('ignore');
     const inputs = {
-        reports: coreExports.getMultilineInput('reports'),
-        ignore: coreExports.getMultilineInput('ignore'),
+        reports: reports.length > 0 ? reports : undefined,
+        ignore: ignore.length > 0 ? ignore : undefined,
         maxAnnotations: coreExports.getInput('max-annotations')
             ? parseInt(coreExports.getInput('max-annotations'))
             : undefined,
