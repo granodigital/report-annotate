@@ -60690,6 +60690,7 @@ const DEFAULT_CONFIG = {
     maxAnnotations: 10,
     customMatchers: {},
     alwaysCommentErrors: true,
+    commentMethod: 'minimize',
 };
 /** Built-in report matchers. */
 const builtInReportMatchers = {
@@ -60870,16 +60871,16 @@ async function processAnnotations(allAnnotations, config) {
     if (totalSkipped > 0) {
         coreExports.warning(`Maximum number of annotations per type reached (${maxPerType}). ${totalSkipped} annotations were not shown.`);
     }
-    // If on a PR, minimize any previous bot comments
-    if (octokit && pullNumber) {
+    // If on a PR, minimize any previous bot comments (when using 'minimize' method)
+    if (octokit && pullNumber && config.commentMethod === 'minimize') {
         await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
     }
     // Determine if we need a PR comment
     const allErrors = allAnnotations.filter(a => a.level === 'error');
-    const hasErrors = allErrors.length > 0 && config.alwaysCommentErrors;
+    const hasErrors = allErrors.length > 0;
     const hasOutOfDiff = outOfDiffAnnotations.length > 0;
     const hasSkipped = totalSkipped > 0;
-    const needsComment = hasErrors || hasOutOfDiff || hasSkipped;
+    const needsComment = (hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
     if (needsComment) {
         const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
         const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
@@ -60896,6 +60897,11 @@ async function processAnnotations(allAnnotations, config) {
                 warnings: totalWarnings,
                 notices: totalNotices,
             },
+            commentMethod: config.commentMethod,
+            octokit,
+            owner,
+            repo,
+            pullNumber,
         });
     }
     // Set outputs for other workflow steps to use.
@@ -60913,16 +60919,31 @@ async function createSummaryComment(params) {
         coreExports.info('Not running on a pull request, skipping comment creation.');
         return;
     }
-    const octokit = githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
-    const { owner, repo } = githubExports.context.repo;
-    const pullNumber = githubExports.context.payload.pull_request.number;
+    const octokit = params.octokit ??
+        githubExports.getOctokit(coreExports.getInput('token') || process.env.GITHUB_TOKEN);
+    const { owner, repo, pullNumber } = params;
     const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
     const sha = githubExports.context.payload.pull_request.head?.sha ?? 'HEAD';
     const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
     let commentBody = `${COMMENT_HEADER}\n\n`;
-    commentBody += `**Summary:** Found ❌ ${pluralize(params.totalCounts.errors, 'error')}, ⚠️ ${pluralize(params.totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(params.totalCounts.notices, 'notice')} in total.\n\n`;
+    // Build summary line, omitting types with 0 count
+    const summaryParts = [];
+    if (params.totalCounts.errors > 0)
+        summaryParts.push(`❌ ${pluralize(params.totalCounts.errors, 'error')}`);
+    if (params.totalCounts.warnings > 0)
+        summaryParts.push(`⚠️ ${pluralize(params.totalCounts.warnings, 'warning')}`);
+    if (params.totalCounts.notices > 0)
+        summaryParts.push(`ℹ️ ${pluralize(params.totalCounts.notices, 'notice')}`);
+    if (summaryParts.length > 0) {
+        commentBody += `**Summary:** Found ${summaryParts.join(', ')}.\n\n`;
+    }
+    // Track error files already shown in the allErrors section to avoid duplication in skipped
+    const shownErrorKeys = new Set();
     // Section: All errors (always shown when alwaysCommentErrors is enabled)
     if (params.allErrors.length > 0) {
+        for (const e of params.allErrors) {
+            shownErrorKeys.add(annotationKey(e));
+        }
         commentBody += generateAnnotationSection('CAUTION', params.allErrors, diffBaseUrl);
     }
     // Section: Out-of-diff annotations
@@ -60936,24 +60957,30 @@ async function createSummaryComment(params) {
         commentBody += generateBlobAnnotationSection('WARNING', outOfDiffWarnings, blobBaseUrl);
         commentBody += generateBlobAnnotationSection('NOTE', outOfDiffNotices, blobBaseUrl);
     }
-    // Section: Skipped annotations (over limit)
-    const totalSkipped = params.skippedErrors.length +
+    // Section: Skipped annotations (over limit), excluding errors already shown in allErrors
+    const dedupedSkippedErrors = params.skippedErrors.filter(e => !shownErrorKeys.has(annotationKey(e)));
+    const totalSkipped = dedupedSkippedErrors.length +
         params.skippedWarnings.length +
         params.skippedNotices.length;
     if (totalSkipped > 0) {
         commentBody += `### Skipped Annotations\n\n`;
         commentBody += `The maximum number of annotations per type (${params.maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
-        commentBody += generateAnnotationSection('CAUTION', params.skippedErrors, diffBaseUrl);
+        commentBody += generateAnnotationSection('CAUTION', dedupedSkippedErrors, diffBaseUrl);
         commentBody += generateAnnotationSection('WARNING', params.skippedWarnings, diffBaseUrl);
         commentBody += generateAnnotationSection('NOTE', params.skippedNotices, diffBaseUrl);
     }
     try {
-        await octokit.rest.issues.createComment({
-            owner,
-            repo,
-            issue_number: pullNumber,
-            body: commentBody,
-        });
+        if (params.commentMethod === 'update') {
+            await updateOrCreateComment(octokit, owner, repo, pullNumber, commentBody);
+        }
+        else {
+            await octokit.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pullNumber,
+                body: commentBody,
+            });
+        }
         coreExports.info('Created PR comment with annotation summary.');
     }
     catch (error) {
@@ -61016,6 +61043,51 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
         coreExports.warning(`Failed to minimize previous bot comments: ${error}`);
     }
 }
+/** Find the latest bot comment on the PR, or create a new one. */
+async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
+    // Find the latest bot comment to update
+    const allComments = [];
+    let page = 1;
+    const perPage = 100;
+    while (true) {
+        const response = await octokit.rest.issues.listComments({
+            owner,
+            repo,
+            issue_number: pullNumber,
+            page,
+            per_page: perPage,
+        });
+        allComments.push(...response.data);
+        if (response.data.length < perPage)
+            break;
+        page++;
+    }
+    const botComment = allComments
+        .filter(c => c.body?.startsWith(COMMENT_HEADER) ||
+        c.body?.startsWith('## Skipped Annotations'))
+        .at(-1);
+    if (botComment) {
+        await octokit.rest.issues.updateComment({
+            owner,
+            repo,
+            comment_id: botComment.id,
+            body,
+        });
+        coreExports.debug(`Updated existing comment ${botComment.id}`);
+    }
+    else {
+        await octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: pullNumber,
+            body,
+        });
+    }
+}
+/** Generate a unique key for an annotation to support deduplication. */
+function annotationKey(annotation) {
+    return `${annotation.properties.file}:${annotation.properties.startLine}:${annotation.message}`;
+}
 /** Truncate file path to show at most 4 directories. */
 function truncateFilePath(filePath) {
     const parts = filePath.split('/');
@@ -61038,6 +61110,20 @@ const levelEmojis = {
     WARNING: '⚠️',
     NOTE: 'ℹ️',
 };
+/**
+ * Neutralize GitHub @mentions in annotation messages to prevent unwanted notifications.
+ * Handles usernames with hyphens and org/team mentions (e.g. @org/team-name).
+ */
+function neutralizeMentions(message) {
+    return message.replace(/(?<!`)@[\w][\w/-]*(?!`)/g, '`$&`');
+}
+/** URL-encode each segment of a file path for use in URLs. */
+function encodeFilePath(filePath) {
+    return filePath
+        .split('/')
+        .map(segment => encodeURIComponent(segment))
+        .join('/');
+}
 /** Generate a comment section for a specific annotation level. */
 function generateAnnotationSection(levelName, annotations, baseUrl) {
     if (annotations.length === 0)
@@ -61045,7 +61131,7 @@ function generateAnnotationSection(levelName, annotations, baseUrl) {
     const emoji = levelEmojis[levelName] ?? levelName;
     let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
     for (const annotation of annotations) {
-        const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
+        const message = neutralizeMentions(annotation.message);
         let line = `- ${message}`;
         if (annotation.properties.file && annotation.properties.startLine) {
             const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
@@ -61065,15 +61151,16 @@ function generateBlobAnnotationSection(levelName, annotations, blobBaseUrl) {
     const emoji = levelEmojis[levelName] ?? levelName;
     let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
     for (const annotation of annotations) {
-        const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
+        const message = neutralizeMentions(annotation.message);
         let line = `- ${message}`;
         if (annotation.properties.file) {
+            const encodedPath = encodeFilePath(annotation.properties.file);
             const displayLocation = annotation.properties.startLine
                 ? `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`
                 : truncateFilePath(annotation.properties.file);
             const link = annotation.properties.startLine
-                ? `${blobBaseUrl}/${annotation.properties.file}#L${annotation.properties.startLine}`
-                : `${blobBaseUrl}/${annotation.properties.file}`;
+                ? `${blobBaseUrl}/${encodedPath}#L${annotation.properties.startLine}`
+                : `${blobBaseUrl}/${encodedPath}`;
             line = `- [${displayLocation}](${link}) ${message}`;
         }
         section += `${line}\n`;
@@ -61125,6 +61212,10 @@ async function loadConfig() {
     const alwaysCommentErrors = alwaysCommentErrorsInput != null && alwaysCommentErrorsInput !== ''
         ? alwaysCommentErrorsInput !== 'false'
         : undefined;
+    const commentMethodInput = coreExports.getInput('comment-method');
+    const commentMethod = commentMethodInput === 'minimize' || commentMethodInput === 'update'
+        ? commentMethodInput
+        : undefined;
     const inputs = {
         reports: coreExports.getMultilineInput('reports'),
         ignore: coreExports.getMultilineInput('ignore'),
@@ -61133,6 +61224,7 @@ async function loadConfig() {
             : undefined,
         customMatchers,
         alwaysCommentErrors,
+        commentMethod,
     };
     coreExports.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
     const yamlConfig = await loadYamlConfig();

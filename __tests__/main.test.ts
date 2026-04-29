@@ -85,6 +85,7 @@ let mockOctokit: {
 		issues: {
 			createComment: jest.Mock<any>;
 			listComments: jest.Mock<any>;
+			updateComment: jest.Mock<any>;
 		};
 		pulls: {
 			listFiles: jest.Mock<any>;
@@ -148,6 +149,7 @@ describe('action', () => {
 				issues: {
 					createComment: jest.fn(),
 					listComments: jest.fn(),
+					updateComment: jest.fn(),
 				},
 				pulls: {
 					listFiles: jest.fn().mockResolvedValue({ data: [] }),
@@ -460,9 +462,7 @@ at Tests.Registration.main(Registration.java:202)`,
 		const createCommentCall =
 			mockOctokit.rest.issues.createComment.mock.calls[0][0];
 		expect(createCommentCall.body).toContain('## Report Annotations');
-		expect(createCommentCall.body).toContain(
-			'**Summary:** Found ❌ 3 errors, ⚠️ 0 warnings, and ℹ️ 0 notices in total.',
-		);
+		expect(createCommentCall.body).toContain('**Summary:** Found ❌ 3 errors.');
 		expect(infoMock).toHaveBeenCalledWith(
 			'Created PR comment with annotation summary.',
 		);
@@ -486,9 +486,9 @@ at Tests.Registration.main(Registration.java:202)`,
 		await main.run();
 		const createCommentCall =
 			mockOctokit.rest.issues.createComment.mock.calls[0][0];
-		// The summary should show total counts across all types
+		// The summary should show total counts across all types (0-count types omitted)
 		expect(createCommentCall.body).toContain(
-			'**Summary:** Found ❌ 2 errors, ⚠️ 3 warnings, and ℹ️ 0 notices in total.',
+			'**Summary:** Found ❌ 2 errors, ⚠️ 3 warnings.',
 		);
 		// The skipped sections should only list the overflow
 		expect(createCommentCall.body).toContain('### Skipped Annotations');
@@ -817,6 +817,22 @@ at Tests.Registration.main(Registration.java:202)`,
 			);
 		});
 
+		it('should escape @org/team mentions in messages', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message: 'Owned by @my-org/frontend-team member',
+					properties: {},
+				},
+			];
+			const result = main.generateAnnotationSection(
+				'CAUTION',
+				annotations,
+				'https://example.com',
+			);
+			expect(result).toContain('`@my-org/frontend-team`');
+		});
+
 		it('should not add duplicate escaping for messages already containing code formatting', () => {
 			const annotations: PendingAnnotation[] = [
 				{
@@ -897,6 +913,27 @@ at Tests.Registration.main(Registration.java:202)`,
 			);
 			// Should not contain line number reference
 			expect(result).not.toContain('#L');
+		});
+
+		it('should URL-encode file paths with special characters', () => {
+			const annotations: PendingAnnotation[] = [
+				{
+					level: 'error',
+					message: 'Error in file with spaces',
+					properties: {
+						file: 'src/my file #1.ts',
+						startLine: 10,
+					},
+				},
+			];
+			const result = main.generateBlobAnnotationSection(
+				'CAUTION',
+				annotations,
+				'https://github.com/owner/repo/blob/abc123',
+			);
+			expect(result).toContain(
+				'(https://github.com/owner/repo/blob/abc123/src/my%20file%20%231.ts#L10)',
+			);
 		});
 	});
 
@@ -1034,5 +1071,82 @@ at Tests.Registration.main(Registration.java:202)`,
 			expect.stringContaining('MinimizeComment'),
 			{ input: { subjectId: 'comment2', classifier: 'OUTDATED' } },
 		);
+	});
+
+	it('should update existing comment when comment-method is update', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		testInputs['comment-method'] = 'update';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		// listComments called twice: once by processAnnotations (no minimize since method=update),
+		// once by updateOrCreateComment to find existing comment
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 42,
+					node_id: 'comment42',
+					body: '## Report Annotations\n\nOld comment',
+				},
+			],
+		});
+		mockOctokit.rest.issues.updateComment.mockResolvedValue({});
+		await main.run();
+		// Should NOT minimize since comment-method is 'update'
+		expect(mockOctokit.graphql).not.toHaveBeenCalled();
+		// Should update the existing comment
+		expect(mockOctokit.rest.issues.updateComment).toHaveBeenCalledWith(
+			expect.objectContaining({
+				owner: 'test-owner',
+				repo: 'test-repo',
+				comment_id: 42,
+				body: expect.stringContaining('## Report Annotations'),
+			}),
+		);
+		// Should NOT create a new comment
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
+	it('should create new comment when comment-method is update but no existing comment', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		testInputs['comment-method'] = 'update';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalled();
+	});
+
+	it('should not include errors in skipped section when already shown in allErrors', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		// junit-many-errors has 3 errors; with max-annotations=2, 1 will be skipped
+		// But alwaysCommentErrors=true shows all 3 errors in the errors section
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['max-annotations'] = '2';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		// All errors shown in main section
+		expect(createCommentCall.body).toContain('❌ CAUTION (3)');
+		// The skipped section should not duplicate errors already shown
+		expect(createCommentCall.body).not.toContain('### Skipped Annotations');
 	});
 });

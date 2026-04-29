@@ -23,7 +23,10 @@ const DEFAULT_CONFIG: Partial<Config> = {
 	maxAnnotations: 10,
 	customMatchers: {},
 	alwaysCommentErrors: true,
+	commentMethod: 'minimize',
 };
+
+export type CommentMethod = 'minimize' | 'update';
 
 export interface Config {
 	/**
@@ -39,6 +42,8 @@ export interface Config {
 	customMatchers: Record<string, ReportMatcher>;
 	/** When true, all errors are always included in the PR comment body. */
 	alwaysCommentErrors: boolean;
+	/** How to handle previous bot comments: 'minimize' hides them, 'update' edits the last one in-place. */
+	commentMethod: CommentMethod;
 }
 
 type AnnotationLevel = 'notice' | 'warning' | 'error' | 'ignore';
@@ -305,17 +310,18 @@ async function processAnnotations(
 		);
 	}
 
-	// If on a PR, minimize any previous bot comments
-	if (octokit && pullNumber) {
+	// If on a PR, minimize any previous bot comments (when using 'minimize' method)
+	if (octokit && pullNumber && config.commentMethod === 'minimize') {
 		await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
 	}
 
 	// Determine if we need a PR comment
 	const allErrors = allAnnotations.filter(a => a.level === 'error');
-	const hasErrors = allErrors.length > 0 && config.alwaysCommentErrors;
+	const hasErrors = allErrors.length > 0;
 	const hasOutOfDiff = outOfDiffAnnotations.length > 0;
 	const hasSkipped = totalSkipped > 0;
-	const needsComment = hasErrors || hasOutOfDiff || hasSkipped;
+	const needsComment =
+		(hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
 
 	if (needsComment) {
 		const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
@@ -338,6 +344,11 @@ async function processAnnotations(
 				warnings: totalWarnings,
 				notices: totalNotices,
 			},
+			commentMethod: config.commentMethod,
+			octokit,
+			owner,
+			repo,
+			pullNumber,
 		});
 	}
 
@@ -359,6 +370,11 @@ interface SummaryCommentParams {
 	outOfDiffAnnotations: PendingAnnotation[];
 	maxPerType: number;
 	totalCounts: { errors: number; warnings: number; notices: number };
+	commentMethod: CommentMethod;
+	octokit: ReturnType<typeof github.getOctokit> | null;
+	owner: string;
+	repo: string;
+	pullNumber: number;
 }
 
 /** Create a PR comment summarizing errors, out-of-diff, and skipped annotations. */
@@ -371,20 +387,38 @@ async function createSummaryComment(
 		return;
 	}
 
-	const octokit = github.getOctokit(
-		core.getInput('token') || process.env.GITHUB_TOKEN!,
-	);
-	const { owner, repo } = github.context.repo;
-	const pullNumber = github.context.payload.pull_request.number;
+	const octokit =
+		params.octokit ??
+		github.getOctokit(core.getInput('token') || process.env.GITHUB_TOKEN!);
+	const { owner, repo, pullNumber } = params;
 	const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
 	const sha = github.context.payload.pull_request.head?.sha ?? 'HEAD';
 	const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
 
 	let commentBody = `${COMMENT_HEADER}\n\n`;
-	commentBody += `**Summary:** Found ❌ ${pluralize(params.totalCounts.errors, 'error')}, ⚠️ ${pluralize(params.totalCounts.warnings, 'warning')}, and ℹ️ ${pluralize(params.totalCounts.notices, 'notice')} in total.\n\n`;
+
+	// Build summary line, omitting types with 0 count
+	const summaryParts: string[] = [];
+	if (params.totalCounts.errors > 0)
+		summaryParts.push(`❌ ${pluralize(params.totalCounts.errors, 'error')}`);
+	if (params.totalCounts.warnings > 0)
+		summaryParts.push(
+			`⚠️ ${pluralize(params.totalCounts.warnings, 'warning')}`,
+		);
+	if (params.totalCounts.notices > 0)
+		summaryParts.push(`ℹ️ ${pluralize(params.totalCounts.notices, 'notice')}`);
+	if (summaryParts.length > 0) {
+		commentBody += `**Summary:** Found ${summaryParts.join(', ')}.\n\n`;
+	}
+
+	// Track error files already shown in the allErrors section to avoid duplication in skipped
+	const shownErrorKeys = new Set<string>();
 
 	// Section: All errors (always shown when alwaysCommentErrors is enabled)
 	if (params.allErrors.length > 0) {
+		for (const e of params.allErrors) {
+			shownErrorKeys.add(annotationKey(e));
+		}
 		commentBody += generateAnnotationSection(
 			'CAUTION',
 			params.allErrors,
@@ -423,9 +457,12 @@ async function createSummaryComment(
 		);
 	}
 
-	// Section: Skipped annotations (over limit)
+	// Section: Skipped annotations (over limit), excluding errors already shown in allErrors
+	const dedupedSkippedErrors = params.skippedErrors.filter(
+		e => !shownErrorKeys.has(annotationKey(e)),
+	);
 	const totalSkipped =
-		params.skippedErrors.length +
+		dedupedSkippedErrors.length +
 		params.skippedWarnings.length +
 		params.skippedNotices.length;
 	if (totalSkipped > 0) {
@@ -433,7 +470,7 @@ async function createSummaryComment(
 		commentBody += `The maximum number of annotations per type (${params.maxPerType}) was reached. Here are the additional annotations that were not displayed:\n\n`;
 		commentBody += generateAnnotationSection(
 			'CAUTION',
-			params.skippedErrors,
+			dedupedSkippedErrors,
 			diffBaseUrl,
 		);
 		commentBody += generateAnnotationSection(
@@ -449,12 +486,22 @@ async function createSummaryComment(
 	}
 
 	try {
-		await octokit.rest.issues.createComment({
-			owner,
-			repo,
-			issue_number: pullNumber,
-			body: commentBody,
-		});
+		if (params.commentMethod === 'update') {
+			await updateOrCreateComment(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				commentBody,
+			);
+		} else {
+			await octokit.rest.issues.createComment({
+				owner,
+				repo,
+				issue_number: pullNumber,
+				body: commentBody,
+			});
+		}
 		core.info('Created PR comment with annotation summary.');
 	} catch (error) {
 		core.error(`Failed to create PR comment: ${error}`);
@@ -536,6 +583,65 @@ async function minimizePreviousBotComments(
 	}
 }
 
+/** Find the latest bot comment on the PR, or create a new one. */
+async function updateOrCreateComment(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	body: string,
+): Promise<void> {
+	// Find the latest bot comment to update
+	const allComments: Array<{
+		id: number;
+		body?: string;
+	}> = [];
+	let page = 1;
+	const perPage = 100;
+	while (true) {
+		const response = await octokit.rest.issues.listComments({
+			owner,
+			repo,
+			issue_number: pullNumber,
+			page,
+			per_page: perPage,
+		});
+		allComments.push(...response.data);
+		if (response.data.length < perPage) break;
+		page++;
+	}
+
+	const botComment = allComments
+		.filter(
+			c =>
+				c.body?.startsWith(COMMENT_HEADER) ||
+				c.body?.startsWith('## Skipped Annotations'),
+		)
+		.at(-1);
+
+	if (botComment) {
+		await octokit.rest.issues.updateComment({
+			owner,
+			repo,
+			comment_id: botComment.id,
+			body,
+		});
+		core.debug(`Updated existing comment ${botComment.id}`);
+	} else {
+		await octokit.rest.issues.createComment({
+			owner,
+			repo,
+			issue_number: pullNumber,
+			body,
+		});
+	}
+}
+
+/** Generate a unique key for an annotation to support deduplication. */
+function annotationKey(annotation: PendingAnnotation): string {
+	return `${annotation.properties.file}:${annotation.properties.startLine}:${annotation.message}`;
+}
+
 /** Truncate file path to show at most 4 directories. */
 export function truncateFilePath(filePath: string): string {
 	const parts = filePath.split('/');
@@ -562,6 +668,22 @@ const levelEmojis: Record<string, string> = {
 	NOTE: 'ℹ️',
 };
 
+/**
+ * Neutralize GitHub @mentions in annotation messages to prevent unwanted notifications.
+ * Handles usernames with hyphens and org/team mentions (e.g. @org/team-name).
+ */
+function neutralizeMentions(message: string): string {
+	return message.replace(/(?<!`)@[\w][\w/-]*(?!`)/g, '`$&`');
+}
+
+/** URL-encode each segment of a file path for use in URLs. */
+function encodeFilePath(filePath: string): string {
+	return filePath
+		.split('/')
+		.map(segment => encodeURIComponent(segment))
+		.join('/');
+}
+
 /** Generate a comment section for a specific annotation level. */
 export function generateAnnotationSection(
 	levelName: string,
@@ -573,7 +695,7 @@ export function generateAnnotationSection(
 	const emoji = levelEmojis[levelName] ?? levelName;
 	let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
 	for (const annotation of annotations) {
-		const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
+		const message = neutralizeMentions(annotation.message);
 		let line = `- ${message}`;
 		if (annotation.properties.file && annotation.properties.startLine) {
 			const displayLocation = `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`;
@@ -598,15 +720,16 @@ export function generateBlobAnnotationSection(
 	const emoji = levelEmojis[levelName] ?? levelName;
 	let section = `<details>\n<summary>${emoji} ${levelName} (${annotations.length})</summary>\n\n`;
 	for (const annotation of annotations) {
-		const message = annotation.message.replace(/(?<!`)@\w+(?!`)/g, '`$&`');
+		const message = neutralizeMentions(annotation.message);
 		let line = `- ${message}`;
 		if (annotation.properties.file) {
+			const encodedPath = encodeFilePath(annotation.properties.file);
 			const displayLocation = annotation.properties.startLine
 				? `${truncateFilePath(annotation.properties.file)}#L${annotation.properties.startLine}`
 				: truncateFilePath(annotation.properties.file);
 			const link = annotation.properties.startLine
-				? `${blobBaseUrl}/${annotation.properties.file}#L${annotation.properties.startLine}`
-				: `${blobBaseUrl}/${annotation.properties.file}`;
+				? `${blobBaseUrl}/${encodedPath}#L${annotation.properties.startLine}`
+				: `${blobBaseUrl}/${encodedPath}`;
 			line = `- [${displayLocation}](${link}) ${message}`;
 		}
 		section += `${line}\n`;
@@ -661,6 +784,11 @@ async function loadConfig(): Promise<Config> {
 		alwaysCommentErrorsInput != null && alwaysCommentErrorsInput !== ''
 			? alwaysCommentErrorsInput !== 'false'
 			: undefined;
+	const commentMethodInput = core.getInput('comment-method');
+	const commentMethod: CommentMethod | undefined =
+		commentMethodInput === 'minimize' || commentMethodInput === 'update'
+			? commentMethodInput
+			: undefined;
 	const inputs: Partial<Config> = {
 		reports: core.getMultilineInput('reports'),
 		ignore: core.getMultilineInput('ignore'),
@@ -669,6 +797,7 @@ async function loadConfig(): Promise<Config> {
 			: undefined,
 		customMatchers,
 		alwaysCommentErrors,
+		commentMethod,
 	};
 	core.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
 	const yamlConfig = await loadYamlConfig();
