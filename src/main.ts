@@ -673,7 +673,7 @@ const levelEmojis: Record<string, string> = {
  * Handles usernames with hyphens and org/team mentions (e.g. @org/team-name).
  */
 function neutralizeMentions(message: string): string {
-	return message.replace(/(?<!`)@[\w][\w/-]*(?!`)/g, '`$&`');
+	return message.replace(/(?<!`)@[a-zA-Z][\w/-]*(?!`)/g, '`$&`');
 }
 
 /** URL-encode each segment of a file path for use in URLs. */

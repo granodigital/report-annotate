@@ -495,6 +495,25 @@ at Tests.Registration.main(Registration.java:202)`,
 		expect(createCommentCall.body).toContain('⚠️ WARNING (2)');
 	});
 
+	it('should format summary with all three annotation types', async () => {
+		// junit-generic has 2 errors and 1 notice
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain(
+			'**Summary:** Found ❌ 2 errors, ℹ️ 1 notice.',
+		);
+	});
+
 	it('should handle PR comment API failure', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
