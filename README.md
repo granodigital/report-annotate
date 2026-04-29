@@ -45,13 +45,15 @@ steps:
 
 ## Inputs
 
-| Name              | Description                                                                                                                    | Default                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `reports`         | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                      | `["junit\|junit/*.xml"]`         |
-| `ignore`          | Ignore files from report search: `"[glob1, glob2...]"`                                                                         | `['node_modules/**', 'dist/**']` |
-| `max-annotations` | Maximum number of annotations per type (error/warning/notice)                                                                  | `10`                             |
-| `custom-matchers` | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples |                                  |
-| `token`           | GitHub token for creating PR comments when annotations are skipped                                                             | `${{ github.token }}`            |
+| Name                    | Description                                                                                                                                 | Default                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `reports`               | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                                   | `["junit\|junit/*.xml"]`         |
+| `ignore`                | Ignore files from report search: `"[glob1, glob2...]"`                                                                                      | `['node_modules/**', 'dist/**']` |
+| `max-annotations`       | Maximum number of annotations per type (error/warning/notice). GitHub Actions limits annotations to 10 per type per step.                   | `10`                             |
+| `custom-matchers`       | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples              |                                  |
+| `always-comment-errors` | When true, all errors are always included in the PR comment body regardless of annotation limits or diff membership                         | `true`                           |
+| `comment-method`        | How to handle previous bot comments: `minimize` hides old comments and creates a new one, `update` edits the last existing comment in-place | `minimize`                       |
+| `token`                 | GitHub token for creating PR comments (used for error summaries, out-of-diff annotations, and skipped annotation comments)                  | `${{ github.token }}`            |
 
 ## Skipped Annotations
 
@@ -59,10 +61,31 @@ When the maximum number of annotations per type is reached, additional
 annotations are not displayed as GitHub annotations to avoid clutter. Instead,
 they are added as a comment on the pull request.
 
-<!-- prettier-ignore -->
-> [!NOTE]
-> For more information about GitHub Actions annotation limitations, see the
-> [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
+## PR Comment Summary
+
+A PR comment is automatically created when any of the following conditions are
+met:
+
+- **Errors exist** (when `always-comment-errors` is `true`, the default): All
+  errors are listed in the comment so they are visible without opening the
+  Changes tab.
+- **Out-of-diff annotations**: When lint/tests run on all files (e.g., after
+  ESLint config changes), annotations on files not included in the PR diff won't
+  display as inline annotations. These are automatically detected and included
+  in the PR comment with links to the blob view.
+- **Skipped annotations**: When the `max-annotations` limit is exceeded,
+  additional annotations are listed in the comment.
+
+The behavior depends on `comment-method`:
+
+- When `comment-method` is `minimize`, a new comment is created and previous bot
+  comments from this action are automatically minimized.
+- When `comment-method` is `update`, the latest existing bot comment from this
+  action is updated in place and older comments are not minimized.
+    <!-- prettier-ignore -->
+  > [!NOTE] For more information about GitHub Actions annotation limitations,
+  > see the
+  > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 ## Custom Matchers
 

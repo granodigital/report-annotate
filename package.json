@@ -1,7 +1,7 @@
 {
 	"name": "report-annotate",
 	"description": "Annotate PR from report e.g. junit",
-	"version": "3.1.6",
+	"version": "3.3.0",
 	"author": "",
 	"type": "module",
 	"private": true,
@@ -42,10 +42,10 @@
 		"@actions/core": "^1.11.1",
 		"@actions/github": "^6.0.0",
 		"@types/glob": "^8.1.0",
-		"@xmldom/xmldom": "^0.8.10",
+		"@xmldom/xmldom": "^0.8.13",
 		"glob": "^10.5.0",
 		"xpath": "^0.0.34",
-		"yaml": "^2.3.4"
+		"yaml": "^2.8.3"
 	},
 	"devDependencies": {
 		"@github/local-action": "^6.0.2",
@@ -75,6 +75,8 @@
 		"@rollup/rollup-linux-x64-gnu": "*"
 	},
 	"overrides": {
-		"undici": "^6.24.0"
+		"undici": "^7.24.0",
+		"brace-expansion@2": "~2.0.3",
+		"uuid": "^14.0.0"
 	}
 }

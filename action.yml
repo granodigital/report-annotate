@@ -28,6 +28,16 @@ inputs:
       Custom matchers to use for parsing reports in JSON format.
       Example: { "matcher-name": ReportMatcher }
       See ./src/matchers for examples
+  always-comment-errors:
+    description: |-
+      When true, all errors are always included in the PR comment body
+      regardless of annotation limits or diff membership
+    default: 'true'
+  comment-method:
+    description: |-
+      How to handle previous bot comments: 'minimize' hides old comments and
+      creates a new one, 'update' edits the last existing comment in-place
+    default: 'minimize'
   token:
     description: GitHub token for creating PR comments
     default: ${{ github.token }}
