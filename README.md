@@ -76,9 +76,12 @@ met:
 - **Skipped annotations**: When the `max-annotations` limit is exceeded,
   additional annotations are listed in the comment.
 
-Previous bot comments from this action are automatically minimized when a new
-comment is created.
+The behavior depends on `comment-method`:
 
+- When `comment-method` is `minimize`, a new comment is created and previous bot
+  comments from this action are automatically minimized.
+- When `comment-method` is `update`, the latest existing bot comment from this
+  action is updated in place and older comments are not minimized.
 <!-- prettier-ignore -->
 > [!NOTE]
 > For more information about GitHub Actions annotation limitations, see the
