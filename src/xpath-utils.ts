@@ -79,7 +79,12 @@ export const xpathSelect = (node: Node) => ({
 		} catch (error) {
 			// Xpath does not show the expression in the error message.
 			const msg = error instanceof Error ? error.message : 'Unknown error';
-			throw new Error(`Error parsing xpath expression "${expression}": ${msg}`);
+			throw new Error(
+				`Error parsing xpath expression "${expression}": ${msg}`,
+				{
+					cause: error,
+				},
+			);
 		}
 	},
 	/** Evaluate the expression and return the result as a string. */

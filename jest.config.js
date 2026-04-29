@@ -20,10 +20,13 @@ export default {
 	//   }
 	// },
 	extensionsToTreatAsEsm: ['.ts'],
+	moduleNameMapper: {
+		'^\\./matchers/(.*)\\.js$': '<rootDir>/src/matchers/$1',
+		'^\\./xpath-utils\\.js$': '<rootDir>/src/xpath-utils',
+	},
 	moduleFileExtensions: ['ts', 'js'],
 	preset: 'ts-jest',
 	reporters: ['default'],
-	resolver: 'ts-jest-resolver',
 	testEnvironment: 'node',
 	testMatch: ['**/*.test.ts'],
 	testPathIgnorePatterns: ['/dist/', '/node_modules/'],

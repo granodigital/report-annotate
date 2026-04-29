@@ -18,16 +18,13 @@ type MutableContext = Omit<Context, 'payload' | 'repo'> & {
 const coreMocks: Record<string, jest.Mock> = {};
 const githubMocks: Record<string, jest.Mock> = {};
 
-await jest.unstable_mockModule('@actions/core', async () => {
-	const original =
-		await jest.requireActual<typeof import('@actions/core')>('@actions/core');
-	const make = <T extends keyof typeof original>(key: T) => {
+await jest.unstable_mockModule('@actions/core', () => {
+	const make = (key: string) => {
 		const fn = jest.fn();
 		coreMocks[key as string] = fn;
 		return fn;
 	};
 	return {
-		...original,
 		debug: make('debug'),
 		info: make('info'),
 		error: make('error'),
@@ -43,18 +40,13 @@ await jest.unstable_mockModule('@actions/core', async () => {
 	} as typeof import('@actions/core');
 });
 
-await jest.unstable_mockModule('@actions/github', async () => {
-	const original =
-		await jest.requireActual<typeof import('@actions/github')>(
-			'@actions/github',
-		);
-	const make = <T extends keyof typeof original>(key: T) => {
+await jest.unstable_mockModule('@actions/github', () => {
+	const make = (key: string) => {
 		const fn = jest.fn();
 		githubMocks[key as string] = fn;
 		return fn;
 	};
 	return {
-		...original,
 		getOctokit: make('getOctokit'),
 		context: {
 			payload: {},
