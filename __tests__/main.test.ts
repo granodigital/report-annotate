@@ -125,7 +125,7 @@ describe('action', () => {
 		const getInputMock = jest.fn((...args: unknown[]) => {
 			const name = String(args[0]);
 			const value = inputValue(name);
-			if (value == null) return '';
+			if (value === null || value === undefined) return '';
 			// For getInput always coerce arrays to first element
 			return Array.isArray(value) ? value[0] : (value as string);
 		});
@@ -565,7 +565,7 @@ at Tests.Registration.main(Registration.java:202)`,
 		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
 		testInputs['max-annotations'] = '10';
 		// Disable always-comment-errors to test minimization without new comment
-		testInputs['always-comment-errors'] = 'False';
+		testInputs['always-comment-errors'] = 'false';
 		// Mock listFiles to return all files as changed
 		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
 			data: [{ filename: 'tests/registration.code' }],
