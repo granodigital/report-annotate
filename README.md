@@ -82,10 +82,10 @@ The behavior depends on `comment-method`:
   comments from this action are automatically minimized.
 - When `comment-method` is `update`, the latest existing bot comment from this
   action is updated in place and older comments are not minimized.
-<!-- prettier-ignore -->
-> [!NOTE]
-> For more information about GitHub Actions annotation limitations, see the
-> [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
+    <!-- prettier-ignore -->
+  > [!NOTE] For more information about GitHub Actions annotation limitations,
+  > see the
+  > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 ## Custom Matchers
 
