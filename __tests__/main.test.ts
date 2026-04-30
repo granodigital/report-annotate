@@ -589,12 +589,16 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 		// Only the bot comment should be minimized, not the unrelated one
 		expect(mockOctokit.graphql).toHaveBeenCalledTimes(1);
-		// And a fresh all-clear comment should be posted
+		// And a fresh all-clear comment should be posted, including the
+		// hidden marker that subsequent runs use to stay idempotent.
 		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
 			expect.objectContaining({
-				body: expect.stringContaining('All issues resolved'),
+				body: expect.stringContaining('<!-- report-annotate:all-clear -->'),
 			}),
 		);
+		// listComments should only be paginated once across the entire run,
+		// not duplicated by the minimize and find-latest helpers.
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalledTimes(1);
 	});
 
 	it('should not post all-clear or minimize when no previous bot comment exists (minimize method)', async () => {
@@ -649,6 +653,60 @@ at Tests.Registration.main(Registration.java:202)`,
 			}),
 		);
 		// Should not create a new comment or minimize anything
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+		expect(mockOctokit.graphql).not.toHaveBeenCalled();
+	});
+
+	it('should be idempotent when latest prior bot comment is already an all-clear (minimize method)', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		// Latest bot comment is itself an all-clear from a previous clean run
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 7,
+					node_id: 'cleared',
+					body: '## Report Annotations\n<!-- report-annotate:all-clear -->\n\n✅ All issues resolved.\n',
+				},
+			],
+		});
+		await main.run();
+		// Should not minimize, create, or update anything — repeat clean run
+		// must not stack up duplicate all-clear comments.
+		expect(mockOctokit.graphql).not.toHaveBeenCalled();
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+		expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
+	});
+
+	it('should be idempotent when latest prior bot comment is already an all-clear (update method)', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		testInputs['comment-method'] = 'update';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 7,
+					node_id: 'cleared',
+					body: '## Report Annotations\n<!-- report-annotate:all-clear -->\n\n✅ All issues resolved.\n',
+				},
+			],
+		});
+		await main.run();
+		expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
 		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
 		expect(mockOctokit.graphql).not.toHaveBeenCalled();
 	});
