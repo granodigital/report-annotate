@@ -84,14 +84,15 @@ The behavior depends on `comment-method`:
   action is updated in place and older comments are not minimized.
 
 When a run has nothing to report (no errors, out-of-diff, or skipped
-annotations) and a previous bot comment exists, the action replaces it with
-an "All issues resolved" status — minimizing the previous comment and posting
-a fresh all-clear (`minimize`), or updating the existing one in place
-(`update`). PRs with no previous bot comment are left untouched.
-    <!-- prettier-ignore -->
-  > [!NOTE] For more information about GitHub Actions annotation limitations,
-  > see the
-  > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
+annotations) and a previous bot comment exists, the action replaces it with an
+"All issues resolved" status — minimizing the previous comment and posting a
+fresh all-clear (`minimize`), or updating the existing one in place (`update`).
+PRs with no previous bot comment are left untouched.
+
+<!-- prettier-ignore -->
+> [!NOTE] For more information about GitHub Actions annotation limitations, see
+> the
+> [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 ## Custom Matchers
 
