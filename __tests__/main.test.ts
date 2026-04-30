@@ -548,7 +548,7 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 	});
 
-	it('should minimize stale bot comments when current run has no annotations to report', async () => {
+	it('should minimize stale bot comment and post all-clear when current run has no annotations to report', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
 			pull_request: { number: 123, head: { sha: 'abc123' } },
@@ -578,6 +578,7 @@ at Tests.Registration.main(Registration.java:202)`,
 			],
 		});
 		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
 		await main.run();
 		// Stale bot comment should be minimized so the PR no longer shows
 		// outdated annotations.
@@ -588,8 +589,33 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 		// Only the bot comment should be minimized, not the unrelated one
 		expect(mockOctokit.graphql).toHaveBeenCalledTimes(1);
-		// Should not create a new comment — there's nothing to report
+		// And a fresh all-clear comment should be posted
+		expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: expect.stringContaining('All issues resolved'),
+			}),
+		);
+	});
+
+	it('should not post all-clear or minimize when no previous bot comment exists (minimize method)', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		// No previous bot comments on the PR
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [{ id: 99, node_id: 'unrelated', body: 'Some other comment' }],
+		});
+		await main.run();
+		// Clean PR with no prior bot comment — leave it untouched
+		expect(mockOctokit.graphql).not.toHaveBeenCalled();
 		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+		expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
 	});
 
 	it('should update stale bot comment to all-clear when current run has no annotations and method is update', async () => {

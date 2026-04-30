@@ -56193,15 +56193,12 @@ async function processAnnotations(allAnnotations, config) {
         });
     }
     else if (octokit && pullNumber) {
-        // Nothing new to report, but a previous bot comment may be stale and
-        // claim issues still exist. Clean it up per the configured method so
-        // the PR reflects the current clean state.
-        if (config.commentMethod === 'minimize') {
-            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
-        }
-        else {
-            await updateExistingBotComment(octokit, owner, repo, pullNumber, `${COMMENT_HEADER}\n\n✅ All issues resolved.\n`);
-        }
+        // Nothing new to report. If a previous bot comment exists it is now
+        // stale (still showing old errors/warnings), so replace it with an
+        // "all clear" status — minimize+post for `minimize`, update for
+        // `update`. We skip this entirely when no prior bot comment exists
+        // to avoid spamming clean PRs.
+        await postAllClearStatus(octokit, owner, repo, pullNumber, config.commentMethod);
     }
     // Set outputs for other workflow steps to use.
     setOutput('errors', tally.errors);
@@ -56364,27 +56361,42 @@ async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
     }
 }
 /**
- * Update the latest bot comment on the PR if one exists. Unlike
- * updateOrCreateComment, this does not create a new comment when none is
- * found — used when there's no new content to surface.
+ * Replace any stale prior bot comment with an "all clear" status. Does
+ * nothing when there is no prior bot comment, so clean PRs are not spammed.
+ *
+ * - `minimize`: minimize prior bot comments and create a new all-clear one
+ * - `update`:   rewrite the latest prior bot comment in place
  */
-async function updateExistingBotComment(octokit, owner, repo, pullNumber, body) {
+async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMethod) {
     try {
-        const botComment = await findLatestBotComment(octokit, owner, repo, pullNumber);
-        if (!botComment) {
-            debug('No previous bot comment to update.');
+        const previous = await findLatestBotComment(octokit, owner, repo, pullNumber);
+        if (!previous) {
+            debug('No previous bot comment to clear.');
             return;
         }
-        await octokit.rest.issues.updateComment({
-            owner,
-            repo,
-            comment_id: botComment.id,
-            body,
-        });
-        info(`Updated previous bot comment ${botComment.id} to all-clear.`);
+        const body = `${COMMENT_HEADER}\n\n✅ All issues resolved.\n`;
+        if (commentMethod === 'minimize') {
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+            await octokit.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pullNumber,
+                body,
+            });
+            info('Posted all-clear PR comment and minimized previous ones.');
+        }
+        else {
+            await octokit.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+            });
+            info(`Updated previous bot comment ${previous.id} to all-clear.`);
+        }
     }
     catch (error) {
-        warning(`Failed to update previous bot comment: ${error}`);
+        warning(`Failed to post all-clear PR comment: ${error}`);
     }
 }
 /** Fetch the latest bot comment authored by this action, if any. */
