@@ -548,7 +548,7 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 	});
 
-	it('should not minimize previous PR comments when no new comment is created', async () => {
+	it('should minimize stale bot comments when current run has no annotations to report', async () => {
 		// Mock GitHub context to be on a PR
 		(github.context as MutableContext).payload = {
 			pull_request: { number: 123, head: { sha: 'abc123' } },
@@ -556,13 +556,13 @@ at Tests.Registration.main(Registration.java:202)`,
 		// Use a report with few errors that won't exceed the limit
 		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
 		testInputs['max-annotations'] = '10';
-		// Disable always-comment-errors to test minimization without new comment
+		// Disable always-comment-errors so nothing is reported in a comment
 		testInputs['always-comment-errors'] = 'false';
 		// Mock listFiles to return all files as changed
 		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
 			data: [{ filename: 'tests/registration.code' }],
 		});
-		// Mock listComments to return some previous bot comments
+		// Mock listComments to return a previous bot comment plus an unrelated one
 		mockOctokit.rest.issues.listComments.mockResolvedValue({
 			data: [
 				{
@@ -577,12 +577,70 @@ at Tests.Registration.main(Registration.java:202)`,
 				},
 			],
 		});
-		// Mock graphql for minimizing comments
 		mockOctokit.graphql.mockResolvedValue({});
 		await main.run();
-		expect(mockOctokit.rest.issues.listComments).not.toHaveBeenCalled();
+		// Stale bot comment should be minimized so the PR no longer shows
+		// outdated annotations.
+		expect(mockOctokit.rest.issues.listComments).toHaveBeenCalled();
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{ input: { subjectId: 'comment1', classifier: 'OUTDATED' } },
+		);
+		// Only the bot comment should be minimized, not the unrelated one
+		expect(mockOctokit.graphql).toHaveBeenCalledTimes(1);
+		// Should not create a new comment — there's nothing to report
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
+	it('should update stale bot comment to all-clear when current run has no annotations and method is update', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		testInputs['comment-method'] = 'update';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 42,
+					node_id: 'comment42',
+					body: '## Report Annotations\n\nOld comment',
+				},
+			],
+		});
+		mockOctokit.rest.issues.updateComment.mockResolvedValue({});
+		await main.run();
+		// Should update the existing bot comment in place to reflect the
+		// resolved state.
+		expect(mockOctokit.rest.issues.updateComment).toHaveBeenCalledWith(
+			expect.objectContaining({
+				comment_id: 42,
+				body: expect.stringContaining('All issues resolved'),
+			}),
+		);
+		// Should not create a new comment or minimize anything
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
 		expect(mockOctokit.graphql).not.toHaveBeenCalled();
-		// Should not create a new comment since no annotations were skipped and alwaysCommentErrors is false
+	});
+
+	it('should do nothing when current run has no annotations and no previous bot comment exists (update method)', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-generic.xml'];
+		testInputs['max-annotations'] = '10';
+		testInputs['always-comment-errors'] = 'false';
+		testInputs['comment-method'] = 'update';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		await main.run();
+		expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
 		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
 	});
 

@@ -352,6 +352,21 @@ async function processAnnotations(
 			repo,
 			pullNumber,
 		});
+	} else if (octokit && pullNumber) {
+		// Nothing new to report, but a previous bot comment may be stale and
+		// claim issues still exist. Clean it up per the configured method so
+		// the PR reflects the current clean state.
+		if (config.commentMethod === 'minimize') {
+			await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+		} else {
+			await updateExistingBotComment(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				`${COMMENT_HEADER}\n\n✅ All issues resolved.\n`,
+			);
+		}
 	}
 
 	// Set outputs for other workflow steps to use.
@@ -594,33 +609,12 @@ async function updateOrCreateComment(
 	pullNumber: number,
 	body: string,
 ): Promise<void> {
-	// Find the latest bot comment to update
-	const allComments: Array<{
-		id: number;
-		body?: string;
-	}> = [];
-	let page = 1;
-	const perPage = 100;
-	while (true) {
-		const response = await octokit.rest.issues.listComments({
-			owner,
-			repo,
-			issue_number: pullNumber,
-			page,
-			per_page: perPage,
-		});
-		allComments.push(...response.data);
-		if (response.data.length < perPage) break;
-		page++;
-	}
-
-	const botComment = allComments
-		.filter(
-			c =>
-				c.body?.startsWith(COMMENT_HEADER) ||
-				c.body?.startsWith('## Skipped Annotations'),
-		)
-		.at(-1);
+	const botComment = await findLatestBotComment(
+		octokit,
+		owner,
+		repo,
+		pullNumber,
+	);
 
 	if (botComment) {
 		await octokit.rest.issues.updateComment({
@@ -638,6 +632,73 @@ async function updateOrCreateComment(
 			body,
 		});
 	}
+}
+
+/**
+ * Update the latest bot comment on the PR if one exists. Unlike
+ * updateOrCreateComment, this does not create a new comment when none is
+ * found — used when there's no new content to surface.
+ */
+async function updateExistingBotComment(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	body: string,
+): Promise<void> {
+	try {
+		const botComment = await findLatestBotComment(
+			octokit,
+			owner,
+			repo,
+			pullNumber,
+		);
+		if (!botComment) {
+			core.debug('No previous bot comment to update.');
+			return;
+		}
+		await octokit.rest.issues.updateComment({
+			owner,
+			repo,
+			comment_id: botComment.id,
+			body,
+		});
+		core.info(`Updated previous bot comment ${botComment.id} to all-clear.`);
+	} catch (error) {
+		core.warning(`Failed to update previous bot comment: ${error}`);
+	}
+}
+
+/** Fetch the latest bot comment authored by this action, if any. */
+async function findLatestBotComment(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+): Promise<{ id: number; body?: string } | undefined> {
+	const allComments: Array<{ id: number; body?: string }> = [];
+	let page = 1;
+	const perPage = 100;
+	while (true) {
+		const response = await octokit.rest.issues.listComments({
+			owner,
+			repo,
+			issue_number: pullNumber,
+			page,
+			per_page: perPage,
+		});
+		allComments.push(...response.data);
+		if (response.data.length < perPage) break;
+		page++;
+	}
+
+	return allComments
+		.filter(
+			c =>
+				c.body?.startsWith(COMMENT_HEADER) ||
+				c.body?.startsWith('## Skipped Annotations'),
+		)
+		.at(-1);
 }
 
 /** Generate a unique key for an annotation to support deduplication. */

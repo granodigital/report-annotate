@@ -56192,6 +56192,17 @@ async function processAnnotations(allAnnotations, config) {
             pullNumber,
         });
     }
+    else if (octokit && pullNumber) {
+        // Nothing new to report, but a previous bot comment may be stale and
+        // claim issues still exist. Clean it up per the configured method so
+        // the PR reflects the current clean state.
+        if (config.commentMethod === 'minimize') {
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+        }
+        else {
+            await updateExistingBotComment(octokit, owner, repo, pullNumber, `${COMMENT_HEADER}\n\n✅ All issues resolved.\n`);
+        }
+    }
     // Set outputs for other workflow steps to use.
     setOutput('errors', tally.errors);
     setOutput('warnings', tally.warnings);
@@ -56333,27 +56344,7 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber) {
 }
 /** Find the latest bot comment on the PR, or create a new one. */
 async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
-    // Find the latest bot comment to update
-    const allComments = [];
-    let page = 1;
-    const perPage = 100;
-    while (true) {
-        const response = await octokit.rest.issues.listComments({
-            owner,
-            repo,
-            issue_number: pullNumber,
-            page,
-            per_page: perPage,
-        });
-        allComments.push(...response.data);
-        if (response.data.length < perPage)
-            break;
-        page++;
-    }
-    const botComment = allComments
-        .filter(c => c.body?.startsWith(COMMENT_HEADER) ||
-        c.body?.startsWith('## Skipped Annotations'))
-        .at(-1);
+    const botComment = await findLatestBotComment(octokit, owner, repo, pullNumber);
     if (botComment) {
         await octokit.rest.issues.updateComment({
             owner,
@@ -56371,6 +56362,53 @@ async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
             body,
         });
     }
+}
+/**
+ * Update the latest bot comment on the PR if one exists. Unlike
+ * updateOrCreateComment, this does not create a new comment when none is
+ * found — used when there's no new content to surface.
+ */
+async function updateExistingBotComment(octokit, owner, repo, pullNumber, body) {
+    try {
+        const botComment = await findLatestBotComment(octokit, owner, repo, pullNumber);
+        if (!botComment) {
+            debug('No previous bot comment to update.');
+            return;
+        }
+        await octokit.rest.issues.updateComment({
+            owner,
+            repo,
+            comment_id: botComment.id,
+            body,
+        });
+        info(`Updated previous bot comment ${botComment.id} to all-clear.`);
+    }
+    catch (error) {
+        warning(`Failed to update previous bot comment: ${error}`);
+    }
+}
+/** Fetch the latest bot comment authored by this action, if any. */
+async function findLatestBotComment(octokit, owner, repo, pullNumber) {
+    const allComments = [];
+    let page = 1;
+    const perPage = 100;
+    while (true) {
+        const response = await octokit.rest.issues.listComments({
+            owner,
+            repo,
+            issue_number: pullNumber,
+            page,
+            per_page: perPage,
+        });
+        allComments.push(...response.data);
+        if (response.data.length < perPage)
+            break;
+        page++;
+    }
+    return allComments
+        .filter(c => c.body?.startsWith(COMMENT_HEADER) ||
+        c.body?.startsWith('## Skipped Annotations'))
+        .at(-1);
 }
 /** Generate a unique key for an annotation to support deduplication. */
 function annotationKey(annotation) {
