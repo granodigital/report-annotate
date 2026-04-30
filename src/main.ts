@@ -352,6 +352,19 @@ async function processAnnotations(
 			repo,
 			pullNumber,
 		});
+	} else if (octokit && pullNumber) {
+		// Nothing new to report. If a previous bot comment exists it is now
+		// stale (still showing old errors/warnings), so replace it with an
+		// "all clear" status — minimize+post for `minimize`, update for
+		// `update`. We skip this entirely when no prior bot comment exists
+		// to avoid spamming clean PRs.
+		await postAllClearStatus(
+			octokit,
+			owner,
+			repo,
+			pullNumber,
+			config.commentMethod,
+		);
 	}
 
 	// Set outputs for other workflow steps to use.
@@ -363,6 +376,15 @@ async function processAnnotations(
 
 /** The comment header used to identify bot comments for minimization. */
 export const COMMENT_HEADER = '## Report Annotations';
+
+/**
+ * Hidden marker embedded in all-clear comments. Used to detect that the
+ * latest bot comment is already an all-clear so repeat clean runs don't
+ * keep posting / minimizing duplicates. Decoupled from the visible body
+ * so wording can change without affecting the idempotency check.
+ */
+const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
+const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
 
 interface SummaryCommentParams {
 	allErrors: PendingAnnotation[];
@@ -517,47 +539,20 @@ async function minimizePreviousBotComments(
 	owner: string,
 	repo: string,
 	pullNumber: number,
+	botComments?: BotComment[],
 ): Promise<void> {
 	try {
-		// Fetch all comments on the PR, handling pagination
-		const allComments: Array<{
-			id: number;
-			node_id: string;
-			body?: string;
-		}> = [];
-		let page = 1;
-		const perPage = 100;
-		while (true) {
-			const response = await octokit.rest.issues.listComments({
-				owner,
-				repo,
-				issue_number: pullNumber,
-				page,
-				per_page: perPage,
-			});
-			allComments.push(...response.data);
-			if (response.data.length < perPage) break;
-			page++;
-		}
+		const comments =
+			botComments ?? (await fetchBotComments(octokit, owner, repo, pullNumber));
 
-		// Filter for bot comments (comments created by this action)
-		const botComments = allComments.filter(
-			comment =>
-				comment.body?.startsWith(COMMENT_HEADER) ||
-				comment.body?.startsWith('## Skipped Annotations'),
-		);
-
-		if (botComments.length === 0) {
+		if (comments.length === 0) {
 			core.debug('No previous bot comments to minimize.');
 			return;
 		}
 
-		core.debug(
-			`Found ${botComments.length} previous bot comments to minimize.`,
-		);
+		core.debug(`Found ${comments.length} previous bot comments to minimize.`);
 
-		// Minimize each bot comment
-		for (const comment of botComments) {
+		for (const comment of comments) {
 			try {
 				await octokit.graphql(
 					`
@@ -594,33 +589,9 @@ async function updateOrCreateComment(
 	pullNumber: number,
 	body: string,
 ): Promise<void> {
-	// Find the latest bot comment to update
-	const allComments: Array<{
-		id: number;
-		body?: string;
-	}> = [];
-	let page = 1;
-	const perPage = 100;
-	while (true) {
-		const response = await octokit.rest.issues.listComments({
-			owner,
-			repo,
-			issue_number: pullNumber,
-			page,
-			per_page: perPage,
-		});
-		allComments.push(...response.data);
-		if (response.data.length < perPage) break;
-		page++;
-	}
-
-	const botComment = allComments
-		.filter(
-			c =>
-				c.body?.startsWith(COMMENT_HEADER) ||
-				c.body?.startsWith('## Skipped Annotations'),
-		)
-		.at(-1);
+	const botComment = (
+		await fetchBotComments(octokit, owner, repo, pullNumber)
+	).at(-1);
 
 	if (botComment) {
 		await octokit.rest.issues.updateComment({
@@ -638,6 +609,103 @@ async function updateOrCreateComment(
 			body,
 		});
 	}
+}
+
+/**
+ * Replace any stale prior bot comment with an "all clear" status. Does
+ * nothing when there is no prior bot comment, or when the latest prior
+ * bot comment is already an all-clear (so repeat clean runs are
+ * idempotent).
+ *
+ * - `minimize`: minimize prior bot comments and create a new all-clear one
+ * - `update`:   rewrite the latest prior bot comment in place
+ */
+async function postAllClearStatus(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	commentMethod: CommentMethod,
+): Promise<void> {
+	try {
+		const botComments = await fetchBotComments(
+			octokit,
+			owner,
+			repo,
+			pullNumber,
+		);
+		const latest = botComments.at(-1);
+		if (!latest) {
+			core.debug('No previous bot comment to clear.');
+			return;
+		}
+		if (latest.body?.includes(ALL_CLEAR_MARKER)) {
+			core.debug('Latest bot comment is already an all-clear; skipping.');
+			return;
+		}
+		if (commentMethod === 'minimize') {
+			await minimizePreviousBotComments(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				botComments,
+			);
+			await octokit.rest.issues.createComment({
+				owner,
+				repo,
+				issue_number: pullNumber,
+				body: ALL_CLEAR_BODY,
+			});
+			core.info('Posted all-clear PR comment and minimized previous one(s).');
+		} else {
+			await octokit.rest.issues.updateComment({
+				owner,
+				repo,
+				comment_id: latest.id,
+				body: ALL_CLEAR_BODY,
+			});
+			core.info(`Updated previous bot comment ${latest.id} to all-clear.`);
+		}
+	} catch (error) {
+		core.warning(`Failed to post all-clear PR comment: ${error}`);
+	}
+}
+
+interface BotComment {
+	id: number;
+	node_id: string;
+	body?: string;
+}
+
+/** Fetch all bot comments authored by this action on the PR (paginated). */
+async function fetchBotComments(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+): Promise<BotComment[]> {
+	const allComments: BotComment[] = [];
+	let page = 1;
+	const perPage = 100;
+	while (true) {
+		const response = await octokit.rest.issues.listComments({
+			owner,
+			repo,
+			issue_number: pullNumber,
+			page,
+			per_page: perPage,
+		});
+		allComments.push(...response.data);
+		if (response.data.length < perPage) break;
+		page++;
+	}
+
+	return allComments.filter(
+		c =>
+			c.body?.startsWith(COMMENT_HEADER) ||
+			c.body?.startsWith('## Skipped Annotations'),
+	);
 }
 
 /** Generate a unique key for an annotation to support deduplication. */
