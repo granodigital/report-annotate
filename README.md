@@ -94,8 +94,8 @@ existing one in place (`update`). PRs with no previous bot comment are left
 untouched.
 
 <!-- prettier-ignore -->
-> [!NOTE] For more information about GitHub Actions annotation limitations, see
-> the
+> [!NOTE]
+> For more information about GitHub Actions annotation limitations, see the
 > [official documentation](https://github.com/actions/toolkit/blob/main/docs/problem-matchers.md#limitations).
 
 ## Custom Matchers
