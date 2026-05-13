@@ -712,7 +712,9 @@ async function postNoReportsFoundWarning(
 		}
 		core.info('Posted no-reports-found PR warning comment.');
 	} catch (error) {
-		core.warning(`Failed to post no-reports-found PR warning comment: ${error}`);
+		core.warning(
+			`Failed to post no-reports-found PR warning comment: ${error}`,
+		);
 	}
 }
 
