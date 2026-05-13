@@ -56019,15 +56019,18 @@ async function findReportFiles(config) {
     const reportFiles = new Map();
     for (const { matcher, patterns } of reportMatcherPatterns) {
         startGroup(`Finding ${matcher} reports`);
-        const files = await globFiles(patterns, config.ignore);
-        if (files.size === 0) {
-            warning(`No reports found for ${matcher} using patterns ${patterns}`);
-            endGroup();
-            continue;
+        try {
+            const files = await globFiles(patterns, config.ignore);
+            if (files.size === 0) {
+                warning(`No reports found for ${matcher} using patterns ${patterns}`);
+                continue;
+            }
+            reportFiles.set(matcher, files);
+            info(`Found ${files.size} report(s) for ${matcher}`);
         }
-        reportFiles.set(matcher, files);
-        info(`Found ${files.size} report(s) for ${matcher}`);
-        endGroup();
+        finally {
+            endGroup();
+        }
     }
     return reportFiles;
 }
@@ -56077,7 +56080,7 @@ async function getPrChangedFiles(octokit, owner, repo, pullNumber) {
     return changedFiles;
 }
 /** Process and create annotations with limits. */
-async function processAnnotations(allAnnotations, config, reportsFound = true) {
+async function processAnnotations(allAnnotations, config, reportsFound) {
     // Sort annotations by priority: errors first, then warnings, then notices
     // Ignore level annotations are already filtered out during collection
     const priorityOrder = {
@@ -56220,6 +56223,7 @@ const COMMENT_HEADER = '## Report Annotations';
  */
 const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
 const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
+/** Build the PR warning body shown when none of the configured reports exist. */
 const NO_REPORTS_FOUND_BODY = (reports) => `${COMMENT_HEADER}\n\n⚠️ No configured report files were found.\n\n` +
     `Report Annotate could not find any files matching the configured report patterns. ` +
     `This can happen when an earlier workflow step failed before generating reports, or when reports were written to a different path.\n\n` +

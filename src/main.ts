@@ -130,17 +130,19 @@ async function findReportFiles(
 	const reportFiles = new Map<string, Set<string>>();
 	for (const { matcher, patterns } of reportMatcherPatterns) {
 		core.startGroup(`Finding ${matcher} reports`);
-		const files = await globFiles(patterns, config.ignore);
-		if (files.size === 0) {
-			core.warning(
-				`No reports found for ${matcher} using patterns ${patterns}`,
-			);
+		try {
+			const files = await globFiles(patterns, config.ignore);
+			if (files.size === 0) {
+				core.warning(
+					`No reports found for ${matcher} using patterns ${patterns}`,
+				);
+				continue;
+			}
+			reportFiles.set(matcher, files);
+			core.info(`Found ${files.size} report(s) for ${matcher}`);
+		} finally {
 			core.endGroup();
-			continue;
 		}
-		reportFiles.set(matcher, files);
-		core.info(`Found ${files.size} report(s) for ${matcher}`);
-		core.endGroup();
 	}
 	return reportFiles;
 }
@@ -209,7 +211,7 @@ export async function getPrChangedFiles(
 async function processAnnotations(
 	allAnnotations: PendingAnnotation[],
 	config: Config,
-	reportsFound = true,
+	reportsFound: boolean,
 ): Promise<void> {
 	// Sort annotations by priority: errors first, then warnings, then notices
 	// Ignore level annotations are already filtered out during collection
@@ -396,6 +398,8 @@ export const COMMENT_HEADER = '## Report Annotations';
  */
 const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
 const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
+
+/** Build the PR warning body shown when none of the configured reports exist. */
 const NO_REPORTS_FOUND_BODY = (reports: string[]) =>
 	`${COMMENT_HEADER}\n\n⚠️ No configured report files were found.\n\n` +
 	`Report Annotate could not find any files matching the configured report patterns. ` +
