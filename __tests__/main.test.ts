@@ -207,6 +207,39 @@ describe('action', () => {
 		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
 	});
 
+	it('should post a PR warning instead of all-clear if no reports are found', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/does-not-exist.xml'];
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Report Annotations\n\nOld comment',
+				},
+			],
+		});
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain(
+			'⚠️ No configured report files were found.',
+		);
+		expect(createCommentCall.body).toContain(
+			'- `junit-eslint|fixtures/does-not-exist.xml`',
+		);
+		expect(createCommentCall.body).not.toContain('All issues resolved');
+		expect(mockOctokit.graphql).toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			{ input: { subjectId: 'comment1', classifier: 'OUTDATED' } },
+		);
+		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
+	});
+
 	it('should support custom matchers', async () => {
 		testInputs['custom-matchers'] = `{"custom-matcher": {
 			"format": "xml",

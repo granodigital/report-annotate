@@ -75,6 +75,9 @@ met:
   in the PR comment with links to the blob view.
 - **Skipped annotations**: When the `max-annotations` limit is exceeded,
   additional annotations are listed in the comment.
+- **No report files found**: When none of the configured report patterns match,
+  a warning comment is posted instead of treating previous annotations as
+  resolved.
 
 The behavior depends on `comment-method`:
 
@@ -83,11 +86,11 @@ The behavior depends on `comment-method`:
 - When `comment-method` is `update`, the latest existing bot comment from this
   action is updated in place and older comments are not minimized.
 
-When a run has nothing to report (no errors, out-of-diff, or skipped
-annotations) and a previous bot comment exists, the action replaces it with an
-"All issues resolved" status — minimizing the previous comment and posting a
-fresh all-clear (`minimize`), or updating the existing one in place (`update`).
-PRs with no previous bot comment are left untouched.
+When a run has nothing to report (no errors, out-of-diff, skipped annotations,
+or missing report files) and a previous bot comment exists, the action replaces
+it with an "All issues resolved" status — minimizing the previous comment and
+posting a fresh all-clear (`minimize`), or updating the existing one in place
+(`update`). PRs with no previous bot comment are left untouched.
 
 <!-- prettier-ignore -->
 > [!NOTE] For more information about GitHub Actions annotation limitations, see
