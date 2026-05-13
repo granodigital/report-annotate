@@ -55998,7 +55998,7 @@ async function run() {
         };
         const reportFiles = await findReportFiles(config);
         const allAnnotations = await parseAllReports(reportFiles, reportMatchers);
-        await processAnnotations(allAnnotations, config, reportFiles.size === 0);
+        await processAnnotations(allAnnotations, config, reportFiles.size > 0);
     }
     catch (error) {
         if (error instanceof Error)
@@ -56077,7 +56077,7 @@ async function getPrChangedFiles(octokit, owner, repo, pullNumber) {
     return changedFiles;
 }
 /** Process and create annotations with limits. */
-async function processAnnotations(allAnnotations, config, noReportsFound = false) {
+async function processAnnotations(allAnnotations, config, reportsFound = true) {
     // Sort annotations by priority: errors first, then warnings, then notices
     // Ignore level annotations are already filtered out during collection
     const priorityOrder = {
@@ -56165,7 +56165,7 @@ async function processAnnotations(allAnnotations, config, noReportsFound = false
     const hasOutOfDiff = outOfDiffAnnotations.length > 0;
     const hasSkipped = totalSkipped > 0;
     const needsComment = (hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
-    if (noReportsFound && octokit && pullNumber) {
+    if (!reportsFound && octokit && pullNumber) {
         await postNoReportsFoundWarning(octokit, owner, repo, pullNumber, config.commentMethod, config.reports);
     }
     else if (needsComment) {
@@ -56223,7 +56223,7 @@ const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues
 const NO_REPORTS_FOUND_BODY = (reports) => `${COMMENT_HEADER}\n\n⚠️ No configured report files were found.\n\n` +
     `Report Annotate could not find any files matching the configured report patterns. ` +
     `This can happen when an earlier workflow step failed before generating reports, or when reports were written to a different path.\n\n` +
-    `Configured reports:\n${reports.map(report => `- \`${report}\``).join('\n')}\n`;
+    `Configured reports:\n${reports.map(report => `- \`${report}\``).join('\n')}`;
 /** Create a PR comment summarizing errors, out-of-diff, and skipped annotations. */
 async function createSummaryComment(params) {
     // Only create comment if running on a pull request
