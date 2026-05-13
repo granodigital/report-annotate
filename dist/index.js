@@ -56223,11 +56223,30 @@ const COMMENT_HEADER = '## Report Annotations';
  */
 const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
 const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
+/**
+ * Hidden marker embedded in no-reports-found warning comments. Used to
+ * detect that the latest bot comment is already a no-reports-found warning
+ * so repeat runs don't keep minimizing and re-posting duplicates.
+ */
+const NO_REPORTS_FOUND_MARKER = '<!-- report-annotate:no-reports-found -->';
+/**
+ * Escape HTML special characters so arbitrary strings can be safely
+ * embedded inside HTML tags (e.g. `<code>`) without breaking markup or
+ * leaking `@mentions`.
+ */
+function htmlEscape(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 /** Build the PR warning body shown when none of the configured reports exist. */
-const NO_REPORTS_FOUND_BODY = (reports) => `${COMMENT_HEADER}\n\n⚠️ No configured report files were found.\n\n` +
+const NO_REPORTS_FOUND_BODY = (reports) => `${COMMENT_HEADER}\n${NO_REPORTS_FOUND_MARKER}\n\n⚠️ No configured report files were found.\n\n` +
     `Report Annotate could not find any files matching the configured report patterns. ` +
     `This can happen when an earlier workflow step failed before generating reports, or when reports were written to a different path.\n\n` +
-    `Configured reports:\n${reports.map(report => `- \`${report}\``).join('\n')}`;
+    `Configured reports:\n${reports.map(report => `- <code>${htmlEscape(report)}</code>`).join('\n')}`;
 /** Create a PR comment summarizing errors, out-of-diff, and skipped annotations. */
 async function createSummaryComment(params) {
     // Only create comment if running on a pull request
@@ -56413,7 +56432,13 @@ async function postNoReportsFoundWarning(octokit, owner, repo, pullNumber, comme
             await updateOrCreateComment(octokit, owner, repo, pullNumber, body);
         }
         else {
-            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+            const botComments = await fetchBotComments(octokit, owner, repo, pullNumber);
+            const latest = botComments.at(-1);
+            if (latest?.body?.includes(NO_REPORTS_FOUND_MARKER)) {
+                debug('Latest bot comment is already a no-reports-found warning; skipping.');
+                return;
+            }
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, botComments);
             await octokit.rest.issues.createComment({
                 owner,
                 repo,

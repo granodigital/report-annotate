@@ -230,7 +230,7 @@ describe('action', () => {
 			'⚠️ No configured report files were found.',
 		);
 		expect(createCommentCall.body).toContain(
-			'- `junit-eslint|fixtures/does-not-exist.xml`',
+			'- <code>junit-eslint|fixtures/does-not-exist.xml</code>',
 		);
 		expect(createCommentCall.body).not.toContain('All issues resolved');
 		expect(mockOctokit.graphql).toHaveBeenCalledWith(
@@ -238,6 +238,43 @@ describe('action', () => {
 			{ input: { subjectId: 'comment1', classifier: 'OUTDATED' } },
 		);
 		expect(setOutputMock).toHaveBeenCalledWith('total', 0);
+	});
+
+	it('should not re-post no-reports-found warning when latest comment already has marker', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/does-not-exist.xml'];
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Report Annotations\n<!-- report-annotate:no-reports-found -->\n\n⚠️ No configured report files were found.',
+				},
+			],
+		});
+		await main.run();
+		expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+		expect(mockOctokit.graphql).not.toHaveBeenCalledWith(
+			expect.stringContaining('MinimizeComment'),
+			expect.anything(),
+		);
+	});
+
+	it('should HTML-escape report names with special characters in no-reports-found warning', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/<bad>&\'report".xml'];
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+		await main.run();
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain(
+			'- <code>junit-eslint|fixtures/&lt;bad&gt;&amp;&#39;report&quot;.xml</code>',
+		);
 	});
 
 	it('should support custom matchers', async () => {
