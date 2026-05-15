@@ -106,7 +106,7 @@ export async function run(): Promise<void> {
 
 		const reportFiles = await findReportFiles(config);
 		const allAnnotations = await parseAllReports(reportFiles, reportMatchers);
-		await processAnnotations(allAnnotations, config);
+		await processAnnotations(allAnnotations, config, reportFiles.size > 0);
 	} catch (error) {
 		if (error instanceof Error) core.setFailed(error);
 		throw error;
@@ -130,16 +130,19 @@ async function findReportFiles(
 	const reportFiles = new Map<string, Set<string>>();
 	for (const { matcher, patterns } of reportMatcherPatterns) {
 		core.startGroup(`Finding ${matcher} reports`);
-		const files = await globFiles(patterns, config.ignore);
-		if (files.size === 0) {
-			core.warning(
-				`No reports found for ${matcher} using patterns ${patterns}`,
-			);
-			continue;
+		try {
+			const files = await globFiles(patterns, config.ignore);
+			if (files.size === 0) {
+				core.warning(
+					`No reports found for ${matcher} using patterns ${patterns}`,
+				);
+				continue;
+			}
+			reportFiles.set(matcher, files);
+			core.info(`Found ${files.size} report(s) for ${matcher}`);
+		} finally {
+			core.endGroup();
 		}
-		reportFiles.set(matcher, files);
-		core.info(`Found ${files.size} report(s) for ${matcher}`);
-		core.endGroup();
 	}
 	return reportFiles;
 }
@@ -208,6 +211,7 @@ export async function getPrChangedFiles(
 async function processAnnotations(
 	allAnnotations: PendingAnnotation[],
 	config: Config,
+	reportsFound: boolean,
 ): Promise<void> {
 	// Sort annotations by priority: errors first, then warnings, then notices
 	// Ignore level annotations are already filtered out during collection
@@ -319,7 +323,16 @@ async function processAnnotations(
 	const needsComment =
 		(hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
 
-	if (needsComment) {
+	if (!reportsFound && octokit && pullNumber) {
+		await postNoReportsFoundWarning(
+			octokit,
+			owner,
+			repo,
+			pullNumber,
+			config.commentMethod,
+			config.reports,
+		);
+	} else if (needsComment) {
 		// If on a PR, minimize previous bot comments only when a replacement
 		// comment will be created.
 		if (octokit && pullNumber && config.commentMethod === 'minimize') {
@@ -385,6 +398,34 @@ export const COMMENT_HEADER = '## Report Annotations';
  */
 const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
 const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
+
+/**
+ * Hidden marker embedded in no-reports-found warning comments. Used to
+ * detect that the latest bot comment is already a no-reports-found warning
+ * so repeat runs don't keep minimizing and re-posting duplicates.
+ */
+const NO_REPORTS_FOUND_MARKER = '<!-- report-annotate:no-reports-found -->';
+
+/**
+ * Escape HTML special characters so arbitrary strings can be safely
+ * embedded inside HTML tags (e.g. `<code>`) without breaking markup or
+ * leaking `@mentions`.
+ */
+function htmlEscape(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+/** Build the PR warning body shown when none of the configured reports exist. */
+const NO_REPORTS_FOUND_BODY = (reports: string[]) =>
+	`${COMMENT_HEADER}\n${NO_REPORTS_FOUND_MARKER}\n\n⚠️ No configured report files were found.\n\n` +
+	`Report Annotate could not find any files matching the configured report patterns. ` +
+	`This can happen when an earlier workflow step failed before generating reports, or when reports were written to a different path.\n\n` +
+	`Configured reports:\n${reports.map(report => `- <code>${htmlEscape(report)}</code>`).join('\n')}`;
 
 interface SummaryCommentParams {
 	allErrors: PendingAnnotation[];
@@ -669,6 +710,55 @@ async function postAllClearStatus(
 		}
 	} catch (error) {
 		core.warning(`Failed to post all-clear PR comment: ${error}`);
+	}
+}
+
+/** Post a warning when configured reports are missing instead of marking issues resolved. */
+async function postNoReportsFoundWarning(
+	octokit: ReturnType<typeof github.getOctokit>,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	commentMethod: CommentMethod,
+	reports: string[],
+): Promise<void> {
+	try {
+		const body = NO_REPORTS_FOUND_BODY(reports);
+		if (commentMethod === 'update') {
+			await updateOrCreateComment(octokit, owner, repo, pullNumber, body);
+		} else {
+			const botComments = await fetchBotComments(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+			);
+			const latest = botComments.at(-1);
+			if (latest?.body?.includes(NO_REPORTS_FOUND_MARKER)) {
+				core.debug(
+					'Latest bot comment is already a no-reports-found warning; skipping.',
+				);
+				return;
+			}
+			await minimizePreviousBotComments(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				botComments,
+			);
+			await octokit.rest.issues.createComment({
+				owner,
+				repo,
+				issue_number: pullNumber,
+				body,
+			});
+		}
+		core.info('Posted no-reports-found PR warning comment.');
+	} catch (error) {
+		core.warning(
+			`Failed to post no-reports-found PR warning comment: ${error}`,
+		);
 	}
 }
 
