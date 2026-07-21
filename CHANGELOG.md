@@ -2,6 +2,13 @@
 
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `comment-note` input: custom Markdown note rendered near the top of the PR
+  summary comment, useful for leaving guidance for reviewers or coding agents
+
 ## [3.1.3] - 2026-01-14
 
 ### Fixed

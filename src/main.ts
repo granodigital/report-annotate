@@ -24,6 +24,7 @@ const DEFAULT_CONFIG: Partial<Config> = {
 	customMatchers: {},
 	alwaysCommentErrors: true,
 	commentMethod: 'minimize',
+	commentNote: '',
 };
 
 export type CommentMethod = 'minimize' | 'update';
@@ -44,6 +45,11 @@ export interface Config {
 	alwaysCommentErrors: boolean;
 	/** How to handle previous bot comments: 'minimize' hides them, 'update' edits the last one in-place. */
 	commentMethod: CommentMethod;
+	/**
+	 * Custom Markdown note added near the top of the PR summary comment.
+	 * Empty string means no note is added.
+	 */
+	commentNote: string;
 }
 
 type AnnotationLevel = 'notice' | 'warning' | 'error' | 'ignore';
@@ -359,6 +365,7 @@ async function processAnnotations(
 				warnings: totalWarnings,
 				notices: totalNotices,
 			},
+			commentNote: config.commentNote,
 			commentMethod: config.commentMethod,
 			octokit,
 			owner,
@@ -435,6 +442,8 @@ interface SummaryCommentParams {
 	outOfDiffAnnotations: PendingAnnotation[];
 	maxPerType: number;
 	totalCounts: { errors: number; warnings: number; notices: number };
+	/** Custom Markdown note to add near the top of the comment, if any. */
+	commentNote: string;
 	commentMethod: CommentMethod;
 	octokit: ReturnType<typeof github.getOctokit> | null;
 	owner: string;
@@ -462,6 +471,12 @@ async function createSummaryComment(
 	const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
 
 	let commentBody = `${COMMENT_HEADER}\n\n`;
+
+	// Custom note (e.g. guidance for reviewers or coding agents), if configured.
+	const note = params.commentNote.trim();
+	if (note) {
+		commentBody += `${note}\n\n`;
+	}
 
 	// Build summary line, omitting types with 0 count
 	const summaryParts: string[] = [];
@@ -950,6 +965,8 @@ async function loadConfig(): Promise<Config> {
 		commentMethodInput === 'minimize' || commentMethodInput === 'update'
 			? commentMethodInput
 			: undefined;
+	const commentNoteInput = core.getInput('comment-note');
+	const commentNote = commentNoteInput !== '' ? commentNoteInput : undefined;
 	const reports = core.getMultilineInput('reports');
 	const ignore = core.getMultilineInput('ignore');
 	const inputs: Partial<Config> = {
@@ -961,6 +978,7 @@ async function loadConfig(): Promise<Config> {
 		customMatchers,
 		alwaysCommentErrors,
 		commentMethod,
+		commentNote,
 	};
 	core.debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
 	const yamlConfig = await loadYamlConfig();
