@@ -38,6 +38,13 @@ inputs:
       How to handle previous bot comments: 'minimize' hides old comments and
       creates a new one, 'update' edits the last existing comment in-place
     default: 'minimize'
+  comment-note:
+    description: |-
+      Custom Markdown note added near the top of the PR summary comment
+      (the one listing errors, warnings and skipped/out-of-diff annotations).
+      Use it to give reviewers or coding agents extra guidance. Empty by
+      default (no note is added).
+    default: ''
   token:
     description: GitHub token for creating PR comments
     default: ${{ github.token }}

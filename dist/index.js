@@ -55977,6 +55977,7 @@ const DEFAULT_CONFIG = {
     customMatchers: {},
     alwaysCommentErrors: true,
     commentMethod: 'minimize',
+    commentNote: '',
 };
 /** Built-in report matchers. */
 const builtInReportMatchers = {
@@ -56192,6 +56193,7 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
                 warnings: totalWarnings,
                 notices: totalNotices,
             },
+            commentNote: config.commentNote,
             commentMethod: config.commentMethod,
             octokit,
             owner,
@@ -56261,6 +56263,11 @@ async function createSummaryComment(params) {
     const sha = context.payload.pull_request.head?.sha ?? context.sha;
     const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
     let commentBody = `${COMMENT_HEADER}\n\n`;
+    // Custom note (e.g. guidance for reviewers or coding agents), if configured.
+    const note = params.commentNote.trim();
+    if (note) {
+        commentBody += `${note}\n\n`;
+    }
     // Build summary line, omitting types with 0 count
     const summaryParts = [];
     if (params.totalCounts.errors > 0)
@@ -56605,6 +56612,8 @@ async function loadConfig() {
     const commentMethod = commentMethodInput === 'minimize' || commentMethodInput === 'update'
         ? commentMethodInput
         : undefined;
+    const commentNoteInput = getInput('comment-note');
+    const commentNote = commentNoteInput !== '' ? commentNoteInput : undefined;
     const reports = getMultilineInput('reports');
     const ignore = getMultilineInput('ignore');
     const inputs = {
@@ -56616,6 +56625,7 @@ async function loadConfig() {
         customMatchers,
         alwaysCommentErrors,
         commentMethod,
+        commentNote,
     };
     debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
     const yamlConfig = await loadYamlConfig();

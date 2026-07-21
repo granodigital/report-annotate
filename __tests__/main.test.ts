@@ -1302,6 +1302,50 @@ at Tests.Registration.main(Registration.java:202)`,
 		);
 	});
 
+	it('should include a custom comment-note in the summary comment', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		testInputs['comment-note'] =
+			'> Goal lint zero: Remember to also fix warnings.';
+		// Classify every annotation as out-of-diff so a summary comment is posted
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+
+		await main.run();
+
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toContain(
+			'> Goal lint zero: Remember to also fix warnings.',
+		);
+		// Note appears near the top, before the summary line
+		expect(createCommentCall.body.indexOf('Goal lint zero')).toBeLessThan(
+			createCommentCall.body.indexOf('**Summary:**'),
+		);
+	});
+
+	it('should not add a note paragraph when comment-note is empty', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit-eslint|fixtures/junit-eslint.xml'];
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.listComments.mockResolvedValue({ data: [] });
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+
+		await main.run();
+
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		// Header is immediately followed by the summary line, no extra note block
+		expect(createCommentCall.body).toContain(
+			'## Report Annotations\n\n**Summary:**',
+		);
+	});
+
 	it('should use github context sha as blob link fallback', async () => {
 		(github.context as MutableContext).payload = {
 			pull_request: { number: 123 },
