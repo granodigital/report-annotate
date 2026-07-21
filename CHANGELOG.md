@@ -2,12 +2,17 @@
 
 # Changelog
 
-## [Unreleased]
+## [3.3.5] - 2026-07-21
 
 ### Added
 
 - `comment-note` input: custom Markdown note rendered near the top of the PR
   summary comment, useful for leaving guidance for reviewers or coding agents
+
+### Fixed
+
+- Bumped `brace-expansion` and `undici` to patch transitive Trivy CVEs
+  (CVE-2026-13149, CVE-2026-12151 and others)
 
 ## [3.1.3] - 2026-01-14
 
