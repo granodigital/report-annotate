@@ -45,6 +45,14 @@ inputs:
       Use it to give reviewers or coding agents extra guidance. Empty by
       default (no note is added).
     default: ''
+  comment-scope:
+    description: |-
+      Scope key telling this step's PR comments apart from other
+      report-annotate steps on the same PR (e.g. a lint job and a test job).
+      Each scope manages its own summary comment instead of minimizing the
+      others'. Defaults to "<workflow>/<job>" from the runner context; set
+      it explicitly when two annotate steps share a job (e.g. matrix runs).
+    default: ''
   token:
     description: GitHub token for creating PR comments
     default: ${{ github.token }}

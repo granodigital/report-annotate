@@ -56114,6 +56114,7 @@ const DEFAULT_CONFIG = {
     alwaysCommentErrors: true,
     commentMethod: 'minimize',
     commentNote: '',
+    commentScope: '',
 };
 /** Built-in report matchers. */
 const builtInReportMatchers = {
@@ -56232,6 +56233,7 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
     let octokit = null;
     let pullNumber = 0;
     const { owner, repo } = context.repo;
+    const scopeMarker = commentScopeMarker(resolveCommentScope(config.commentScope));
     if (context.payload.pull_request) {
         octokit = getOctokit(getInput('token') || process.env.GITHUB_TOKEN);
         pullNumber = context.payload.pull_request.number;
@@ -56306,13 +56308,13 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
     const hasSkipped = totalSkipped > 0;
     const needsComment = (hasErrors && config.alwaysCommentErrors) || hasOutOfDiff || hasSkipped;
     if (!reportsFound && octokit && pullNumber) {
-        await postNoReportsFoundWarning(octokit, owner, repo, pullNumber, config.commentMethod, config.reports);
+        await postNoReportsFoundWarning(octokit, owner, repo, pullNumber, config.commentMethod, config.reports, scopeMarker);
     }
     else if (needsComment) {
         // If on a PR, minimize previous bot comments only when a replacement
         // comment will be created.
         if (octokit && pullNumber && config.commentMethod === 'minimize') {
-            await minimizePreviousBotComments(octokit, owner, repo, pullNumber);
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, scopeMarker);
         }
         const totalErrors = allAnnotations.filter(a => a.level === 'error').length;
         const totalWarnings = allAnnotations.filter(a => a.level === 'warning').length;
@@ -56331,6 +56333,7 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
             },
             commentNote: config.commentNote,
             commentMethod: config.commentMethod,
+            scopeMarker,
             octokit,
             owner,
             repo,
@@ -56343,7 +56346,7 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
         // "all clear" status — minimize+post for `minimize`, update for
         // `update`. We skip this entirely when no prior bot comment exists
         // to avoid spamming clean PRs.
-        await postAllClearStatus(octokit, owner, repo, pullNumber, config.commentMethod);
+        await postAllClearStatus(octokit, owner, repo, pullNumber, config.commentMethod, scopeMarker);
     }
     // Set outputs for other workflow steps to use.
     setOutput('errors', tally.errors);
@@ -56354,13 +56357,33 @@ async function processAnnotations(allAnnotations, config, reportsFound) {
 /** The comment header used to identify bot comments for minimization. */
 const COMMENT_HEADER = '## Report Annotations';
 /**
+ * Hidden marker embedding the scope key in every comment this action posts.
+ * fetchBotComments only claims comments carrying the same scope, so several
+ * report-annotate steps on one PR (e.g. lint and tests) manage separate
+ * comments instead of minimizing each other's. Comments with no scope marker
+ * predate scoping and are adopted by whichever scope sees them first.
+ */
+const commentScopeMarker = (scope) => `<!-- report-annotate:scope:${scope} -->`;
+/** Matches any scope marker regardless of its scope key. */
+const ANY_SCOPE_MARKER_RE = /<!-- report-annotate:scope:[\s\S]*? -->/;
+/**
+ * Resolve the effective comment scope: the configured value, or
+ * "<workflow>/<job>" from the runner context. "--" is collapsed so the
+ * scope stays inert inside an HTML comment.
+ */
+function resolveCommentScope(configScope) {
+    const scope = configScope.trim() ||
+        `${context.workflow ?? ''}/${context.job ?? ''}`;
+    return scope.replaceAll('--', '-');
+}
+/**
  * Hidden marker embedded in all-clear comments. Used to detect that the
  * latest bot comment is already an all-clear so repeat clean runs don't
  * keep posting / minimizing duplicates. Decoupled from the visible body
  * so wording can change without affecting the idempotency check.
  */
 const ALL_CLEAR_MARKER = '<!-- report-annotate:all-clear -->';
-const ALL_CLEAR_BODY = `${COMMENT_HEADER}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
+const ALL_CLEAR_BODY = (scopeMarker) => `${COMMENT_HEADER}\n${scopeMarker}\n${ALL_CLEAR_MARKER}\n\n✅ All issues resolved.\n`;
 /**
  * Hidden marker embedded in no-reports-found warning comments. Used to
  * detect that the latest bot comment is already a no-reports-found warning
@@ -56381,7 +56404,7 @@ function htmlEscape(text) {
         .replace(/'/g, '&#39;');
 }
 /** Build the PR warning body shown when none of the configured reports exist. */
-const NO_REPORTS_FOUND_BODY = (reports) => `${COMMENT_HEADER}\n${NO_REPORTS_FOUND_MARKER}\n\n⚠️ No configured report files were found.\n\n` +
+const NO_REPORTS_FOUND_BODY = (reports, scopeMarker) => `${COMMENT_HEADER}\n${scopeMarker}\n${NO_REPORTS_FOUND_MARKER}\n\n⚠️ No configured report files were found.\n\n` +
     `Report Annotate could not find any files matching the configured report patterns. ` +
     `This can happen when an earlier workflow step failed before generating reports, or when reports were written to a different path.\n\n` +
     `Configured reports:\n${reports.map(report => `- <code>${htmlEscape(report)}</code>`).join('\n')}`;
@@ -56398,7 +56421,7 @@ async function createSummaryComment(params) {
     const diffBaseUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}/files`;
     const sha = context.payload.pull_request.head?.sha ?? context.sha;
     const blobBaseUrl = `https://github.com/${owner}/${repo}/blob/${sha}`;
-    let commentBody = `${COMMENT_HEADER}\n\n`;
+    let commentBody = `${COMMENT_HEADER}\n${params.scopeMarker}\n\n`;
     // Custom note (e.g. guidance for reviewers or coding agents), if configured.
     const note = params.commentNote.trim();
     if (note) {
@@ -56449,7 +56472,7 @@ async function createSummaryComment(params) {
     }
     try {
         if (params.commentMethod === 'update') {
-            await updateOrCreateComment(octokit, owner, repo, pullNumber, commentBody);
+            await updateOrCreateComment(octokit, owner, repo, pullNumber, commentBody, params.scopeMarker);
         }
         else {
             await octokit.rest.issues.createComment({
@@ -56466,9 +56489,10 @@ async function createSummaryComment(params) {
     }
 }
 /** Minimize previous bot comments on the PR. */
-async function minimizePreviousBotComments(octokit, owner, repo, pullNumber, botComments) {
+async function minimizePreviousBotComments(octokit, owner, repo, pullNumber, scopeMarker, botComments) {
     try {
-        const comments = botComments ?? (await fetchBotComments(octokit, owner, repo, pullNumber));
+        const comments = botComments ??
+            (await fetchBotComments(octokit, owner, repo, pullNumber, scopeMarker));
         if (comments.length === 0) {
             debug('No previous bot comments to minimize.');
             return;
@@ -56502,8 +56526,8 @@ async function minimizePreviousBotComments(octokit, owner, repo, pullNumber, bot
     }
 }
 /** Find the latest bot comment on the PR, or create a new one. */
-async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
-    const botComment = (await fetchBotComments(octokit, owner, repo, pullNumber)).at(-1);
+async function updateOrCreateComment(octokit, owner, repo, pullNumber, body, scopeMarker) {
+    const botComment = (await fetchBotComments(octokit, owner, repo, pullNumber, scopeMarker)).at(-1);
     if (botComment) {
         await octokit.rest.issues.updateComment({
             owner,
@@ -56531,9 +56555,9 @@ async function updateOrCreateComment(octokit, owner, repo, pullNumber, body) {
  * - `minimize`: minimize prior bot comments and create a new all-clear one
  * - `update`:   rewrite the latest prior bot comment in place
  */
-async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMethod) {
+async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMethod, scopeMarker) {
     try {
-        const botComments = await fetchBotComments(octokit, owner, repo, pullNumber);
+        const botComments = await fetchBotComments(octokit, owner, repo, pullNumber, scopeMarker);
         const latest = botComments.at(-1);
         if (!latest) {
             debug('No previous bot comment to clear.');
@@ -56544,12 +56568,12 @@ async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMetho
             return;
         }
         if (commentMethod === 'minimize') {
-            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, botComments);
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, scopeMarker, botComments);
             await octokit.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: pullNumber,
-                body: ALL_CLEAR_BODY,
+                body: ALL_CLEAR_BODY(scopeMarker),
             });
             info('Posted all-clear PR comment and minimized previous one(s).');
         }
@@ -56558,7 +56582,7 @@ async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMetho
                 owner,
                 repo,
                 comment_id: latest.id,
-                body: ALL_CLEAR_BODY,
+                body: ALL_CLEAR_BODY(scopeMarker),
             });
             info(`Updated previous bot comment ${latest.id} to all-clear.`);
         }
@@ -56568,20 +56592,20 @@ async function postAllClearStatus(octokit, owner, repo, pullNumber, commentMetho
     }
 }
 /** Post a warning when configured reports are missing instead of marking issues resolved. */
-async function postNoReportsFoundWarning(octokit, owner, repo, pullNumber, commentMethod, reports) {
+async function postNoReportsFoundWarning(octokit, owner, repo, pullNumber, commentMethod, reports, scopeMarker) {
     try {
-        const body = NO_REPORTS_FOUND_BODY(reports);
+        const body = NO_REPORTS_FOUND_BODY(reports, scopeMarker);
         if (commentMethod === 'update') {
-            await updateOrCreateComment(octokit, owner, repo, pullNumber, body);
+            await updateOrCreateComment(octokit, owner, repo, pullNumber, body, scopeMarker);
         }
         else {
-            const botComments = await fetchBotComments(octokit, owner, repo, pullNumber);
+            const botComments = await fetchBotComments(octokit, owner, repo, pullNumber, scopeMarker);
             const latest = botComments.at(-1);
             if (latest?.body?.includes(NO_REPORTS_FOUND_MARKER)) {
                 debug('Latest bot comment is already a no-reports-found warning; skipping.');
                 return;
             }
-            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, botComments);
+            await minimizePreviousBotComments(octokit, owner, repo, pullNumber, scopeMarker, botComments);
             await octokit.rest.issues.createComment({
                 owner,
                 repo,
@@ -56595,8 +56619,12 @@ async function postNoReportsFoundWarning(octokit, owner, repo, pullNumber, comme
         warning(`Failed to post no-reports-found PR warning comment: ${error}`);
     }
 }
-/** Fetch all bot comments authored by this action on the PR (paginated). */
-async function fetchBotComments(octokit, owner, repo, pullNumber) {
+/**
+ * Fetch all bot comments authored by this action on the PR (paginated),
+ * limited to the given scope. Comments without any scope marker predate
+ * scoping and are included so they still get cleaned up.
+ */
+async function fetchBotComments(octokit, owner, repo, pullNumber, scopeMarker) {
     const allComments = [];
     let page = 1;
     const perPage = 100;
@@ -56613,8 +56641,15 @@ async function fetchBotComments(octokit, owner, repo, pullNumber) {
             break;
         page++;
     }
-    return allComments.filter(c => c.body?.startsWith(COMMENT_HEADER) ||
-        c.body?.startsWith('## Skipped Annotations'));
+    return allComments.filter(c => {
+        const body = c.body ?? '';
+        const isBotComment = body.startsWith(COMMENT_HEADER) ||
+            body.startsWith('## Skipped Annotations');
+        if (!isBotComment)
+            return false;
+        const marker = body.match(ANY_SCOPE_MARKER_RE);
+        return marker ? marker[0] === scopeMarker : true;
+    });
 }
 /** Generate a unique key for an annotation to support deduplication. */
 function annotationKey(annotation) {
@@ -56750,6 +56785,8 @@ async function loadConfig() {
         : undefined;
     const commentNoteInput = getInput('comment-note');
     const commentNote = commentNoteInput !== '' ? commentNoteInput : undefined;
+    const commentScopeInput = getInput('comment-scope');
+    const commentScope = commentScopeInput ? commentScopeInput : undefined;
     const reports = getMultilineInput('reports');
     const ignore = getMultilineInput('ignore');
     const inputs = {
@@ -56762,6 +56799,7 @@ async function loadConfig() {
         alwaysCommentErrors,
         commentMethod,
         commentNote,
+        commentScope,
     };
     debug(`Parsed inputs: ${JSON.stringify(inputs, null, 2)}`);
     const yamlConfig = await loadYamlConfig();
