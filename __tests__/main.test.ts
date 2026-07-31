@@ -1321,10 +1321,17 @@ at Tests.Registration.main(Registration.java:202)`,
 		expect(createCommentCall.body).toContain(
 			'> Goal lint zero: Remember to also fix warnings.',
 		);
-		// Note appears near the top, before the summary line
-		expect(createCommentCall.body.indexOf('Goal lint zero')).toBeLessThan(
+		// Note appears below the summary line, so a minimized comment previews
+		// the summary instead of the note
+		expect(createCommentCall.body.indexOf('Goal lint zero')).toBeGreaterThan(
 			createCommentCall.body.indexOf('**Summary:**'),
 		);
+	});
+
+	it('should collapse dash runs in the comment scope', async () => {
+		expect(main.resolveCommentScope('a---b')).toBe('a-b');
+		expect(main.resolveCommentScope('a--b--c')).toBe('a-b-c');
+		expect(main.resolveCommentScope('plain/scope')).toBe('plain/scope');
 	});
 
 	it('should not add a note paragraph when comment-note is empty', async () => {
@@ -1340,9 +1347,90 @@ at Tests.Registration.main(Registration.java:202)`,
 
 		const createCommentCall =
 			mockOctokit.rest.issues.createComment.mock.calls[0][0];
-		// Header is immediately followed by the summary line, no extra note block
+		// Header + scope marker are immediately followed by the summary line,
+		// no extra note block
+		expect(createCommentCall.body).toMatch(
+			/## Report Annotations\n<!-- report-annotate:scope:[^>]* -->\n\n\*\*Summary:\*\*/,
+		);
+	});
+
+	it('should not touch comments posted by a different scope', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		// A comment owned by another workflow's annotate step (different scope)
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'comment1',
+					body: '## Report Annotations\n<!-- report-annotate:scope:lint/run-lint -->\n\nLint errors',
+				},
+			],
+		});
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+
+		await main.run();
+
+		// The other scope's comment must not be minimized
+		expect(mockOctokit.graphql).not.toHaveBeenCalled();
+		// The new comment carries this run's own scope, not the other one's
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
+		expect(createCommentCall.body).toMatch(
+			/<!-- report-annotate:scope:[^>]* -->/,
+		);
+		expect(createCommentCall.body).not.toContain('scope:lint/run-lint');
+	});
+
+	it('should minimize only same-scope and legacy unmarked comments', async () => {
+		(github.context as MutableContext).payload = {
+			pull_request: { number: 123, head: { sha: 'abc123' } },
+		};
+		testInputs.reports = ['junit|fixtures/junit-many-errors.xml'];
+		testInputs['comment-scope'] = 'ci/test';
+		mockOctokit.rest.pulls.listFiles.mockResolvedValue({
+			data: [{ filename: 'tests/registration.code' }],
+		});
+		mockOctokit.rest.issues.listComments.mockResolvedValue({
+			data: [
+				{
+					id: 1,
+					node_id: 'same-scope',
+					body: '## Report Annotations\n<!-- report-annotate:scope:ci/test -->\n\nOld test errors',
+				},
+				{
+					id: 2,
+					node_id: 'other-scope',
+					body: '## Report Annotations\n<!-- report-annotate:scope:lint/run-lint -->\n\nLint errors',
+				},
+				{
+					id: 3,
+					node_id: 'legacy',
+					body: '## Report Annotations\n\nPre-scoping comment',
+				},
+			],
+		});
+		mockOctokit.graphql.mockResolvedValue({});
+		mockOctokit.rest.issues.createComment.mockResolvedValue({});
+
+		await main.run();
+
+		// Same-scope and legacy comments are minimized; the other scope's is not
+		const minimized = mockOctokit.graphql.mock.calls.map(
+			call => (call[1] as { input: { subjectId: string } }).input.subjectId,
+		);
+		expect(minimized).toEqual(['same-scope', 'legacy']);
+		// The new comment carries the configured scope
+		const createCommentCall =
+			mockOctokit.rest.issues.createComment.mock.calls[0][0];
 		expect(createCommentCall.body).toContain(
-			'## Report Annotations\n\n**Summary:**',
+			'<!-- report-annotate:scope:ci/test -->',
 		);
 	});
 

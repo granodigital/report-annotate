@@ -45,16 +45,17 @@ steps:
 
 ## Inputs
 
-| Name                    | Description                                                                                                                                    | Default                          |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `reports`               | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                                      | `["junit\|junit/*.xml"]`         |
-| `ignore`                | Ignore files from report search: `"[glob1, glob2...]"`                                                                                         | `['node_modules/**', 'dist/**']` |
-| `max-annotations`       | Maximum number of annotations per type (error/warning/notice). GitHub Actions limits annotations to 10 per type per step.                      | `10`                             |
-| `custom-matchers`       | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples                 |                                  |
-| `always-comment-errors` | When true, all errors are always included in the PR comment body regardless of annotation limits or diff membership                            | `true`                           |
-| `comment-method`        | How to handle previous bot comments: `minimize` hides old comments and creates a new one, `update` edits the last existing comment in-place    | `minimize`                       |
-| `comment-note`          | Custom Markdown note added near the top of the PR summary comment. Use it to give reviewers or coding agents extra guidance. Empty by default. | `''`                             |
-| `token`                 | GitHub token for creating PR comments (used for error summaries, out-of-diff annotations, and skipped annotation comments)                     | `${{ github.token }}`            |
+| Name                    | Description                                                                                                                                                                                                | Default                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `reports`               | Reports to annotate: `"format\|glob1, glob2, ..."` E.g.: `"junit-eslint\|junit/lint.xml"`                                                                                                                  | `["junit\|junit/*.xml"]`         |
+| `ignore`                | Ignore files from report search: `"[glob1, glob2...]"`                                                                                                                                                     | `['node_modules/**', 'dist/**']` |
+| `max-annotations`       | Maximum number of annotations per type (error/warning/notice). GitHub Actions limits annotations to 10 per type per step.                                                                                  | `10`                             |
+| `custom-matchers`       | Custom matchers to use for parsing reports in JSON format: `{ "matcher-name": ReportMatcher }` See ./src/matchers for examples                                                                             |                                  |
+| `always-comment-errors` | When true, all errors are always included in the PR comment body regardless of annotation limits or diff membership                                                                                        | `true`                           |
+| `comment-method`        | How to handle previous bot comments: `minimize` hides old comments and creates a new one, `update` edits the last existing comment in-place                                                                | `minimize`                       |
+| `comment-note`          | Custom Markdown note added below the summary line of the PR comment. Use it to give reviewers or coding agents extra guidance. Empty by default.                                                           | `''`                             |
+| `comment-scope`         | Scope key telling this step's PR comments apart from other report-annotate steps on the same PR. Defaults to `<workflow>/<job>`; set it explicitly when two annotate steps share a job (e.g. matrix runs). | `<workflow>/<job>`               |
+| `token`                 | GitHub token for creating PR comments (used for error summaries, out-of-diff annotations, and skipped annotation comments)                                                                                 | `${{ github.token }}`            |
 
 ## Skipped Annotations
 
@@ -94,12 +95,12 @@ the previous comment and posting a fresh all-clear (`minimize`), or updating the
 existing one in place (`update`). PRs with no previous bot comment are left
 untouched.
 
-You can prepend a custom Markdown note to the summary comment via the
-`comment-note` input. The note is rendered near the top of the comment (before
-the summary line), which makes it a handy place to leave guidance for reviewers
-or coding agents, e.g. a reminder to also fix pre-existing warnings. It is only
-added to the issue-summary comment, not to the all-clear or no-reports-found
-comments.
+You can add a custom Markdown note to the summary comment via the `comment-note`
+input. The note is rendered right below the summary line — so a minimized
+comment still previews the summary — which makes it a handy place to leave
+guidance for reviewers or coding agents, e.g. a reminder to also fix
+pre-existing warnings. It is only added to the issue-summary comment, not to the
+all-clear or no-reports-found comments.
 
 <!-- prettier-ignore -->
 > [!NOTE]
