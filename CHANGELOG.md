@@ -2,6 +2,28 @@
 
 # Changelog
 
+## [3.4.0] - 2026-07-31
+
+### Added
+
+- `comment-scope` input: scope key telling a step's PR comments apart from
+  other report-annotate steps on the same PR (defaults to `<workflow>/<job>`).
+  Each scope now manages its own summary comment instead of minimizing the
+  others' — fixes a green test run declaring "all clear" over a red lint
+  comment. Comments without a scope marker (pre-3.4.0) are adopted by
+  whichever scope sees them first.
+
+### Changed
+
+- `comment-note` now renders below the summary line, so a minimized comment
+  previews the summary instead of the note
+
+### Fixed
+
+- Cleanup verification: the token grep after unset catches a config key that
+  has drifted from the written one
+- Bumped `brace-expansion` to patch a transitive Trivy CVE (CVE-2026-14257)
+
 ## [3.3.5] - 2026-07-21
 
 ### Added
