@@ -47,7 +47,7 @@ export interface Config {
 	/** How to handle previous bot comments: 'minimize' hides them, 'update' edits the last one in-place. */
 	commentMethod: CommentMethod;
 	/**
-	 * Custom Markdown note added near the top of the PR summary comment.
+	 * Custom Markdown note added below the summary line of the PR comment.
 	 * Empty string means no note is added.
 	 */
 	commentNote: string;
@@ -432,14 +432,16 @@ const ANY_SCOPE_MARKER_RE = /<!-- report-annotate:scope:[\s\S]*? -->/;
 
 /**
  * Resolve the effective comment scope: the configured value, or
- * "<workflow>/<job>" from the runner context. "--" is collapsed so the
- * scope stays inert inside an HTML comment.
+ * "<workflow>/<job>" from the runner context. Dash runs are collapsed to a
+ * single dash (a regex pass is a fixpoint, unlike replaceAll('--', '-'),
+ * where '---' would leave '--' behind) so the scope can never form "--" or
+ * "-->" inside the HTML comment marker.
  */
 export function resolveCommentScope(configScope: string): string {
 	const scope =
 		configScope.trim() ||
 		`${github.context.workflow ?? ''}/${github.context.job ?? ''}`;
-	return scope.replaceAll('--', '-');
+	return scope.replace(/-{2,}/g, '-');
 }
 
 /**
@@ -488,7 +490,7 @@ interface SummaryCommentParams {
 	outOfDiffAnnotations: PendingAnnotation[];
 	maxPerType: number;
 	totalCounts: { errors: number; warnings: number; notices: number };
-	/** Custom Markdown note to add near the top of the comment, if any. */
+	/** Custom Markdown note to add below the summary line, if any. */
 	commentNote: string;
 	commentMethod: CommentMethod;
 	/** Hidden scope marker embedded in the comment body. */
@@ -520,12 +522,6 @@ async function createSummaryComment(
 
 	let commentBody = `${COMMENT_HEADER}\n${params.scopeMarker}\n\n`;
 
-	// Custom note (e.g. guidance for reviewers or coding agents), if configured.
-	const note = params.commentNote.trim();
-	if (note) {
-		commentBody += `${note}\n\n`;
-	}
-
 	// Build summary line, omitting types with 0 count
 	const summaryParts: string[] = [];
 	if (params.totalCounts.errors > 0)
@@ -538,6 +534,14 @@ async function createSummaryComment(
 		summaryParts.push(`ℹ️ ${pluralize(params.totalCounts.notices, 'notice')}`);
 	if (summaryParts.length > 0) {
 		commentBody += `**Summary:** Found ${summaryParts.join(', ')}.\n\n`;
+	}
+
+	// Custom note (e.g. guidance for reviewers or coding agents), if configured.
+	// Placed after the summary line so a minimized comment previews the
+	// summary, not the start of the note.
+	const note = params.commentNote.trim();
+	if (note) {
+		commentBody += `${note}\n\n`;
 	}
 
 	// Track error files already shown in the allErrors section to avoid duplication in skipped

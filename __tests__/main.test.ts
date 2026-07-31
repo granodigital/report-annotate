@@ -1321,10 +1321,17 @@ at Tests.Registration.main(Registration.java:202)`,
 		expect(createCommentCall.body).toContain(
 			'> Goal lint zero: Remember to also fix warnings.',
 		);
-		// Note appears near the top, before the summary line
-		expect(createCommentCall.body.indexOf('Goal lint zero')).toBeLessThan(
+		// Note appears below the summary line, so a minimized comment previews
+		// the summary instead of the note
+		expect(createCommentCall.body.indexOf('Goal lint zero')).toBeGreaterThan(
 			createCommentCall.body.indexOf('**Summary:**'),
 		);
+	});
+
+	it('should collapse dash runs in the comment scope', async () => {
+		expect(main.resolveCommentScope('a---b')).toBe('a-b');
+		expect(main.resolveCommentScope('a--b--c')).toBe('a-b-c');
+		expect(main.resolveCommentScope('plain/scope')).toBe('plain/scope');
 	});
 
 	it('should not add a note paragraph when comment-note is empty', async () => {

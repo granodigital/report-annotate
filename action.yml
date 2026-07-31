@@ -40,7 +40,7 @@ inputs:
     default: 'minimize'
   comment-note:
     description: |-
-      Custom Markdown note added near the top of the PR summary comment
+      Custom Markdown note added below the summary line of the PR comment
       (the one listing errors, warnings and skipped/out-of-diff annotations).
       Use it to give reviewers or coding agents extra guidance. Empty by
       default (no note is added).
